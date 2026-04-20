@@ -1,0 +1,79 @@
+# Weekly dependency license check for all repositories in the organization.
+# Requires a GitHub App with read access to the dependency graph, installed on the org.
+# Add secrets: APP_ID, APP_PRIVATE_KEY. Set ORG_NAME or it defaults to the repo owner.
+
+name: Weekly org dependency license check
+
+on:
+  schedule:
+    # Every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      org_name:
+        description: 'Organization name (default: repo owner)'
+        required: false
+        type: string
+
+env:
+  GITHUB_API_VERSION: '2022-11-28'
+
+jobs:
+  check-licenses:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Set org name
+        id: org
+        run: |
+          ORG="${{ github.event.inputs.org_name || vars.ORG_NAME || github.repository_owner }}"
+          echo "org=${ORG}" >> $GITHUB_OUTPUT
+          echo "Using organization: ${ORG}"
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ steps.org.outputs.org }}
+
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: List repos and collect SBOM licenses
+        id: collect
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          ORG: ${{ steps.org.outputs.org }}
+        run: |
+          node scripts/collect-org-licenses.js "$ORG" "$APP_TOKEN" > report.json 2>repos.log
+          echo "repos_count=$(jq -r '.repos_checked // 0' report.json)" >> $GITHUB_OUTPUT
+          echo "packages_count=$(jq -r '.total_packages // 0' report.json)" >> $GITHUB_OUTPUT
+
+      - name: Generate Markdown report
+        run: |
+          node scripts/report-to-markdown.js report.json > LICENSE_REPORT.md
+          echo "## Weekly dependency license report" >> $GITHUB_STEP_SUMMARY
+          head -n 80 LICENSE_REPORT.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report-${{ github.run_number }}
+          path: |
+            report.json
+            LICENSE_REPORT.md
+            repos.log
+
+      - name: Optional – open issue on new license findings
+        if: false  # set to true and configure to open an issue when policy violations are found
+        run: |
+          echo "Add a step here to create an issue using github.rest.issues.create if needed"
