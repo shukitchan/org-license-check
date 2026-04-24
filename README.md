@@ -80,6 +80,160 @@ You do **not** need to store the Installation ID when using `actions/create-gith
   - `LICENSE_REPORT.md` – human-readable report.
   - `repos.log` – stderr from the collector (e.g. API errors).
 
+## Sample Output
+
+### Job summary (preview)
+
+```markdown
+# Dependency license report – my-org
+
+Generated: 2026-04-20T00:00:00.000Z
+
+- Repositories checked: 4
+- Repositories with dependency data: 3
+- Total packages: 12
+
+## License summary (all packages)
+
+| License | Count |
+|---------|-------|
+| MIT | 6 |
+| Apache-2.0 | 2 |
+| BSD-3-Clause | 2 |
+| ISC | 1 |
+| NOASSERTION | 1 |
+
+## By repository
+
+### my-org/api-server
+
+| Package | Version | Concluded | Declared |
+|---------|---------|-----------|----------|
+| express | 4.18.2 | MIT | MIT |
+| lodash | 4.17.21 | MIT | MIT |
+| helmet | 7.1.0 | MIT | MIT |
+| dotenv | 16.3.1 | BSD-3-Clause | BSD-3-Clause |
+
+### my-org/frontend
+
+| Package | Version | Concluded | Declared |
+|---------|---------|-----------|----------|
+| react | 18.2.0 | MIT | MIT |
+| react-dom | 18.2.0 | MIT | MIT |
+| axios | 1.6.2 | MIT | MIT |
+| typescript | 5.3.3 | Apache-2.0 | Apache-2.0 |
+```
+
+### `report.json`
+
+```json
+{
+  "org": "my-org",
+  "generated_at": "2026-04-20T00:00:00.000Z",
+  "repos_checked": 4,
+  "repos_with_sbom": 3,
+  "repos_skipped": [
+    { "repo": "my-org/legacy-app", "reason": "no_sbom_or_404" }
+  ],
+  "total_packages": 12,
+  "by_repo": {
+    "my-org/api-server": [
+      { "name": "express",  "version": "4.18.2",  "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
+      { "name": "lodash",   "version": "4.17.21", "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
+      { "name": "helmet",   "version": "7.1.0",   "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
+      { "name": "dotenv",   "version": "16.3.1",  "licenseConcluded": "BSD-3-Clause", "licenseDeclared": "BSD-3-Clause" }
+    ],
+    "my-org/frontend": [
+      { "name": "react",      "version": "18.2.0", "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
+      { "name": "react-dom",  "version": "18.2.0", "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
+      { "name": "axios",      "version": "1.6.2",  "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
+      { "name": "typescript", "version": "5.3.3",  "licenseConcluded": "Apache-2.0",   "licenseDeclared": "Apache-2.0" }
+    ],
+    "my-org/data-pipeline": [
+      { "name": "requests",       "version": "2.31.0", "licenseConcluded": "Apache-2.0",   "licenseDeclared": "Apache-2.0" },
+      { "name": "python-dotenv",  "version": "1.0.0",  "licenseConcluded": "BSD-3-Clause", "licenseDeclared": "BSD-3-Clause" },
+      { "name": "certifi",        "version": "2023.11.17", "licenseConcluded": "ISC",      "licenseDeclared": "NOASSERTION" },
+      { "name": "urllib3",        "version": "2.1.0",  "licenseConcluded": "NOASSERTION",  "licenseDeclared": "NOASSERTION" }
+    ]
+  },
+  "license_summary": {
+    "MIT": 6,
+    "Apache-2.0": 2,
+    "BSD-3-Clause": 2,
+    "ISC": 1,
+    "NOASSERTION": 1
+  }
+}
+```
+
+### `LICENSE_REPORT.md`
+
+```markdown
+# Dependency license report – my-org
+
+Generated: 2026-04-20T00:00:00.000Z
+
+- Repositories checked: 4
+- Repositories with dependency data: 3
+- Total packages: 12
+
+## License summary (all packages)
+
+| License | Count |
+|---------|-------|
+| MIT | 6 |
+| Apache-2.0 | 2 |
+| BSD-3-Clause | 2 |
+| ISC | 1 |
+| NOASSERTION | 1 |
+
+## By repository
+
+### my-org/api-server
+
+| Package | Version | Concluded | Declared |
+|---------|---------|-----------|----------|
+| express | 4.18.2 | MIT | MIT |
+| lodash | 4.17.21 | MIT | MIT |
+| helmet | 7.1.0 | MIT | MIT |
+| dotenv | 16.3.1 | BSD-3-Clause | BSD-3-Clause |
+
+### my-org/frontend
+
+| Package | Version | Concluded | Declared |
+|---------|---------|-----------|----------|
+| react | 18.2.0 | MIT | MIT |
+| react-dom | 18.2.0 | MIT | MIT |
+| axios | 1.6.2 | MIT | MIT |
+| typescript | 5.3.3 | Apache-2.0 | Apache-2.0 |
+
+### my-org/data-pipeline
+
+| Package | Version | Concluded | Declared |
+|---------|---------|-----------|----------|
+| requests | 2.31.0 | Apache-2.0 | Apache-2.0 |
+| python-dotenv | 1.0.0 | BSD-3-Clause | BSD-3-Clause |
+| certifi | 2023.11.17 | ISC | NOASSERTION |
+| urllib3 | 2.1.0 | NOASSERTION | NOASSERTION |
+
+## Repositories skipped
+
+- `my-org/legacy-app`: no_sbom_or_404
+```
+
+### `repos.log`
+
+```text
+[my-org/api-server] fetching SBOM...
+[my-org/api-server] OK – 4 packages
+[my-org/frontend] fetching SBOM...
+[my-org/frontend] OK – 4 packages
+[my-org/data-pipeline] fetching SBOM...
+[my-org/data-pipeline] OK – 4 packages
+[my-org/legacy-app] fetching SBOM...
+[my-org/legacy-app] SKIP – no_sbom_or_404 (HTTP 404)
+```
+
 ## Limitations
 
 - **Dependency graph only**: Data comes from GitHub’s dependency graph (SBOM). Repos without supported manifests (e.g. npm, pip, Maven, Go modules) or without dependency submission will have no or limited data.
