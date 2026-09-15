@@ -15,7 +15,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import license_check  # noqa: E402
-from licensecheck import report, spdx  # noqa: E402
+from licensecheck import github, report, spdx  # noqa: E402
 from licensecheck.policy import Policy  # noqa: E402
 
 POLICY_DIR = os.path.join(REPO_ROOT, "policy")
@@ -466,6 +466,93 @@ class MatrixIntegrityTests(unittest.TestCase):
         # 118, not the 119 a naive comma-split of the doc suggests: one entry
         # ("Creative Commons GNU LGPL, Version 2.1") contains a comma itself.
         self.assertEqual(len(self.policy.matrix["reject_distributed"]), 118)
+
+
+class GitHubClientTests(unittest.TestCase):
+    """Repo listing has to work for both credential types.
+
+    A plain PAT gets HTTP 403 from /installation/repositories -- that endpoint
+    only accepts installation tokens -- so the 403 must be treated as "not an
+    App token" and fall through to the org listing, not as a fatal error.
+    """
+
+    ORG_PAGE = [
+        {"full_name": "yahoo-Edge/alpha", "owner": {"login": "yahoo-Edge"}},
+        {"full_name": "yahoo-Edge/beta", "owner": {"login": "yahoo-Edge"}},
+    ]
+
+    def _client(self, on_installation):
+        client = github.Client("token-placeholder", log=lambda _m: None)
+        calls = []
+
+        def fake_request(path, method="GET", body=None, accept=None):
+            calls.append(path)
+            if path.startswith("/installation/repositories"):
+                return on_installation()
+            if path.startswith("/orgs/"):
+                return (200, self.ORG_PAGE) if path.endswith("page=1") else (200, [])
+            raise AssertionError("unexpected path: %s" % path)
+
+        client.request = fake_request
+        return client, calls
+
+    def test_pat_403_falls_back_to_the_org_listing(self):
+        def deny():
+            raise github.GitHubError(
+                "HTTP 403: You must authenticate with an installation access token"
+            )
+
+        client, calls = self._client(deny)
+        repos = list(client.list_repos("yahoo-Edge"))
+
+        self.assertEqual([r["full_name"] for r in repos],
+                         ["yahoo-Edge/alpha", "yahoo-Edge/beta"])
+        self.assertTrue(any(p.startswith("/orgs/yahoo-Edge/repos") for p in calls),
+                        "never fell back to the org listing: %s" % calls)
+
+    def test_installation_token_uses_the_installation_listing(self):
+        page = {"repositories": [
+            {"full_name": "yahoo-Edge/alpha", "owner": {"login": "yahoo-Edge"}},
+        ]}
+
+        client = github.Client("token-placeholder", log=lambda _m: None)
+        calls = []
+
+        def fake_request(path, method="GET", body=None, accept=None):
+            calls.append(path)
+            if path.startswith("/installation/repositories"):
+                return (200, page if path.endswith("page=1") else {"repositories": []})
+            raise AssertionError("should not reach the org listing: %s" % path)
+
+        client.request = fake_request
+        repos = list(client.list_repos("yahoo-Edge"))
+        self.assertEqual([r["full_name"] for r in repos], ["yahoo-Edge/alpha"])
+
+    def test_owner_filter_is_case_insensitive(self):
+        # GitHub org names are case-insensitive; "yahoo-Edge" and "yahoo-edge"
+        # are the same org and must not filter each other out.
+        page = {"repositories": [
+            {"full_name": "yahoo-Edge/alpha", "owner": {"login": "yahoo-Edge"}},
+        ]}
+
+        client = github.Client("token-placeholder", log=lambda _m: None)
+
+        def fake_request(path, method="GET", body=None, accept=None):
+            if path.startswith("/installation/repositories"):
+                return (200, page if path.endswith("page=1") else {"repositories": []})
+            raise AssertionError("should not reach the org listing")
+
+        client.request = fake_request
+        self.assertEqual(len(list(client.list_repos("yahoo-edge"))), 1)
+
+    def test_missing_org_with_a_pat_is_a_clear_error(self):
+        def deny():
+            raise github.GitHubError("HTTP 403")
+
+        client, _ = self._client(deny)
+        with self.assertRaises(github.GitHubError) as caught:
+            list(client.list_repos(None))
+        self.assertIn("organization name is required", str(caught.exception))
 
 
 if __name__ == "__main__":

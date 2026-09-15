@@ -107,11 +107,19 @@ class Client:
         Installation tokens see /installation/repositories; a PAT does not, so
         fall back to the org listing.
         """
-        status, _ = self.request("/installation/repositories?per_page=1")
+        try:
+            status, _ = self.request("/installation/repositories?per_page=1")
+        except GitHubError:
+            # A PAT gets 403 here -- the endpoint only accepts installation
+            # tokens. That is not an error, it just means we take the org
+            # listing below. A genuine auth problem resurfaces there.
+            status = None
+
         if status == 200:
             self.log("Listing repositories via the App installation")
             for repo in self.paginate("/installation/repositories", key="repositories"):
-                if not org or (repo.get("owner") or {}).get("login") == org:
+                owner = (repo.get("owner") or {}).get("login") or ""
+                if not org or owner.lower() == org.lower():
                     yield repo
             return
 
