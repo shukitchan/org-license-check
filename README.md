@@ -285,11 +285,36 @@ runners are ephemeral).
 
 ---
 
+## Running it from Claude Code
+
+The repo ships a `/license-check` skill, so you can just ask an agent to run the
+scan instead of remembering the flags:
+
+```
+/license-check
+```
+
+It resolves the repo path itself, checks that credentials are present, runs the
+scan, and summarizes the blocked repositories and anything new since last run.
+It deliberately never passes `--jira` — filing tickets stays a manual step.
+
+For a fresh clone, link the skill into your Claude Code skills directory once:
+
+```bash
+ln -s "$(pwd)/.claude/skills/license-check" ~/.claude/skills/license-check
+```
+
+The skill is also picked up automatically whenever Claude Code is working inside
+this repo, symlink or not.
+
+---
+
 ## Layout
 
 | Path | Purpose |
 |------|---------|
 | `run-monthly.sh` | Entry point |
+| `.claude/skills/license-check/` | `/license-check` skill for running it from Claude Code |
 | `scripts/license_check.py` | CLI: collect → evaluate → report → Jira |
 | `scripts/licensecheck/policy.py` | The rule engine (matrix + profile + exceptions → tier) |
 | `scripts/licensecheck/spdx.py` | License normalization and SPDX expression parsing |
