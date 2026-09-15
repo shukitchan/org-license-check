@@ -189,25 +189,23 @@ a repo already tracked only gets a new ticket when new findings appear.
 
 ---
 
-## Blocking builds early
+## Blocking builds
 
-The monthly sweep is the safety net. To catch a bad license when it lands,
-`.github/workflows/license-gate.yml` is a reusable workflow other repos call
-from their own build:
+The script exits **2** when anything lands at or above `--fail-on` (red by
+default), so any build system can gate on it. To check a single repository
+rather than the whole org:
 
-```yaml
-jobs:
-  licenses:
-    uses: my-org/org-license-check/.github/workflows/license-gate.yml@main
-    with:
-      profile: distributed
-    secrets:
-      app-id: ${{ secrets.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+```bash
+./run-monthly.sh --org my-org --repo my-org/sdk-java --no-incremental
 ```
 
-It scans only the calling repository, uses the same central policy, and fails
-the build on 🔴 red.
+`--no-incremental` keeps a one-off check from touching the monthly run state.
+
+Note that a scan reads the repository's dependency graph as GitHub has it for
+the **default branch**, so this catches a rejected license once the change is
+on the default branch, not while it is still in a pull request. Pre-merge
+blocking needs GitHub's dependency review API, which can see PR-added
+dependencies.
 
 ---
 
@@ -272,16 +270,18 @@ lists repos via `/installation/repositories`; with a PAT it falls back to
 
 ## Scheduling
 
-`.github/workflows/license-check-monthly.yml` runs at 06:00 UTC on the 1st of
-each month, uploads the reports as artifacts, writes the report into the job
-summary, and carries `state/` between runs with `actions/cache` so the
-incremental diff and Jira dedupe work.
-
-Locally, via cron:
+Run it from cron on the 1st of each month:
 
 ```cron
 0 9 1 * * cd /path/to/org-license-check && GITHUB_TOKEN=... ./run-monthly.sh --org my-org
 ```
+
+`state/` is what makes the monthly cadence work — it holds the previous run's
+finding fingerprints and the Jira index. Keep it on disk between runs, or the
+report loses its "New since last run" diff and already-filed tickets get filed
+again. If you later move this into CI, whatever runs it needs to persist
+`state/` across runs (on GitHub Actions that means `actions/cache`, since
+runners are ephemeral).
 
 ---
 
