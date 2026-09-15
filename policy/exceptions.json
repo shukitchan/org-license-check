@@ -1,0 +1,26 @@
+{
+  "_note": "OSO approvals and admin overrides. Covers three requirements from the doc: 'Ability to note approval for a repo to avoid continuing notification', 'Ability to unblock use of licenses for individual repos', and 'Allows to be overridden by admin'.",
+  "_fields": {
+    "repo": "owner/name, or a trailing-* prefix, or * for org-wide",
+    "license": "OSO license name as it appears in license-matrix.json, or * for any",
+    "package": "package name, or * for any (optional, defaults to *)",
+    "tier": "tier to force for matching findings: green (silences it) or yellow (downgrades red to a notification)",
+    "approved_by": "who granted it -- required, appears in the report",
+    "ticket": "OSO/Jira reference for the approval -- required, appears in the report",
+    "expires": "YYYY-MM-DD. Expired approvals are ignored and reported as expired.",
+    "note": "free text shown in the report"
+  },
+
+  "approvals": [
+    {
+      "repo": "my-org/data-pipeline",
+      "license": "GPL 2.0",
+      "package": "*",
+      "tier": "green",
+      "approved_by": "oso-reviewer",
+      "ticket": "OSO-1234",
+      "expires": "2027-01-01",
+      "note": "Example entry. Build-time only, not linked into the shipped artifact."
+    }
+  ]
+}

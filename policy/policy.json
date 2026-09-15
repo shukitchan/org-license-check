@@ -1,0 +1,91 @@
+{
+  "_source": "Open Source Office - License Scanning Requirements Document",
+  "_note": "Rule-based policy an OSO admin can edit without touching code. Controls which reject list each risk profile uses, what tier each outcome maps to, and the message shown to developers.",
+
+  "default_profile": "server-side",
+
+  "_profiles_comment": "Each risk profile picks the reject list that applies to it. 'reject_list' is a key in license-matrix.json (or null for none).",
+  "profiles": {
+    "distributed": {
+      "label": "Distributed Software",
+      "description": "Shipped to customers as binaries, packages, or source.",
+      "reject_list": "reject_distributed"
+    },
+    "server-side": {
+      "label": "Web-based application (server-side backend)",
+      "description": "Runs only on Yahoo-operated infrastructure; not conveyed to users.",
+      "reject_list": "reject_server_side"
+    },
+    "mobile": {
+      "label": "Mobile app",
+      "description": "iOS/Android app shipped through an app store. Distribution rules apply.",
+      "reject_list": "reject_distributed"
+    },
+    "internal": {
+      "label": "Internal use only",
+      "description": "Never leaves Yahoo and is not offered as a network service. Only the banned list blocks.",
+      "reject_list": null
+    },
+    "ai-model": {
+      "label": "OSS AI model",
+      "description": "Model weights/artifacts. Distribution rules apply, plus model-specific terms need OSO review.",
+      "reject_list": "reject_distributed",
+      "always_review": true,
+      "always_review_reason": "OSS AI model licenses (RAIL, Llama Community, Gemma, OpenRAIL-M and similar) carry use restrictions that a license identifier alone does not capture."
+    }
+  },
+
+  "_flag_comment": "When true, a license that is rejected for a stricter profile but permitted for this repo's profile is reported as yellow rather than green -- e.g. GPL in a server-side repo is fine today but blocks any future distribution. Set false to silence those.",
+  "flag_rejected_by_stricter_profile": true,
+
+  "_cloned_comment": "Doc: 'Red Cloned repo - do not allow patching of open source software in cloned repo for certain license types (protect against copyleft)'. Forks are detected automatically; add any non-fork clone here.",
+  "cloned_repos": {
+    "treat_forks_as_cloned": true,
+    "extra": []
+  },
+
+  "_tiers_comment": "Tier ordering is fixed in code (green < yellow < red < red-cloned). 'blocks_build' drives the exit code together with --fail-on.",
+  "tiers": {
+    "green": { "label": "Green", "blocks_build": false, "notify_oso": false },
+    "yellow": { "label": "Yellow", "blocks_build": false, "notify_oso": true },
+    "red": { "label": "Red", "blocks_build": true, "notify_oso": true },
+    "red-cloned": { "label": "Red (cloned repo)", "blocks_build": true, "notify_oso": true }
+  },
+
+  "_messages_comment": "Custom warning text per outcome. {license}, {package}, {version}, {repo}, {profile} are substituted. 'by_license' overrides the generic text for a specific OSO license name or family prefix.",
+  "messages": {
+    "green": "{license} is on the OSO approved list. No action needed.",
+    "banned": "{license} is on the OSO banned list and is not permitted in any Yahoo repository. Remove {package}@{version} or contact the Open Source Office for an exception.",
+    "rejected": "{license} is not permitted for {profile} code ({package}@{version}). Remove the dependency, replace it, or file an exception with the Open Source Office.",
+    "rejected_by_stricter_profile": "{license} is permitted for {profile} use but would block distribution. If {repo} may ever ship to customers, contact the Open Source Office before relying on {package}@{version}.",
+    "review": "{license} is not on the OSO approved or rejected lists. The Open Source Office needs to review this use of {package}@{version}.",
+    "unknown": "No license could be determined for {package}@{version}. Declare the license or contact the Open Source Office.",
+    "cloned": "{repo} is a cloned/forked repository containing {license} code ({package}@{version}). Patching copyleft-licensed code in a clone is not permitted without Open Source Office approval.",
+    "by_license": {
+      "AGPL": "AGPL obligations extend to users reached over a network, so it is banned for all Yahoo code regardless of how it is deployed. Remove {package}@{version}.",
+      "GPL": "GPL is strong copyleft. It may not ship in distributed code. Contact the Open Source Office before using {package}@{version}.",
+      "LGPL": "LGPL is weak copyleft: distributing it requires dynamic linking and relink rights. {package}@{version} may not ship in distributed code without Open Source Office approval of the linking model.",
+      "Open Software": "The Open Software License has network-use obligations similar to AGPL. Not permitted. Remove {package}@{version}.",
+      "European": "EUPL is copyleft with a compatibility clause. The Open Source Office must approve any use of {package}@{version}."
+    }
+  },
+
+  "_reporting_comment": "Doc action item: 'Define reporting requirements (incremental/full/license level/etc)'. The report always contains the full picture; 'incremental' adds a New since last run section by diffing against state/last-run.json.",
+  "reporting": {
+    "incremental": true,
+    "include_green_packages": false,
+    "max_packages_per_repo_in_markdown": 100
+  },
+
+  "_jira_comment": "Doc: 'Ability auto generate jira tickets when a unapproved licenses are found'. Tickets are only created when --jira is passed; otherwise the intended tickets are written to jira-tickets.json. One ticket per repo per tier, deduplicated via state/jira-index.json.",
+  "jira": {
+    "project_key": "OSO",
+    "issue_type": "Task",
+    "create_for_tiers": ["red", "red-cloned", "yellow"],
+    "summary_template": "[{tier}] Unapproved dependency licenses in {repo}",
+    "labels": ["open-source-office", "license-scan"]
+  },
+
+  "_fail_comment": "Default severity at which the run exits non-zero (exit code 2). Override per run with --fail-on.",
+  "fail_on": "red"
+}

@@ -1,0 +1,222 @@
+"""The rule engine: license matrix + risk profile + exceptions -> tier.
+
+Implements the four-tier model from the requirements doc:
+
+    green       all licenses approved (or no open source at all)
+    yellow      proceed, but the Open Source Office is notified
+    red         blocked; the license is rejected for this repo's risk profile
+    red-cloned  blocked; copyleft code inside a cloned/forked repository
+"""
+
+import fnmatch
+import json
+import os
+import re
+from datetime import date
+
+from . import spdx
+
+TIER_ORDER = ["green", "yellow", "red", "red-cloned"]
+
+
+def tier_rank(tier):
+    return TIER_ORDER.index(tier)
+
+
+def worst(tiers):
+    return max(tiers, key=tier_rank) if tiers else "green"
+
+
+def _load_json(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+class Policy:
+    def __init__(self, policy_dir):
+        self.dir = policy_dir
+        self.matrix = _load_json(os.path.join(policy_dir, "license-matrix.json"))
+        self.config = _load_json(os.path.join(policy_dir, "policy.json"))
+        self.repo_profiles = _load_json(os.path.join(policy_dir, "repo-profiles.json"))
+        self.exceptions = _load_json(os.path.join(policy_dir, "exceptions.json"))
+
+        self.resolver = spdx.Resolver(self.matrix)
+        self._lists = {
+            key: {spdx.canonical(n) for n in self.matrix.get(key, [])}
+            for key in ("approved", "reject_server_side", "reject_distributed", "banned")
+        }
+        self._copyleft = [
+            spdx.canonical(f) for f in self.matrix.get("copyleft_families", [])
+        ]
+        # Longest first so "AGPL" does not shadow a more specific prefix.
+        self._by_license_messages = sorted(
+            self.config["messages"].get("by_license", {}).items(),
+            key=lambda kv: -len(kv[0]),
+        )
+        self.expired_approvals = []
+
+    # ---------------------------------------------------------------- profiles
+
+    def profile_for(self, repo_full_name):
+        """Exact match wins over wildcard; unlisted repos get the default."""
+        repos = self.repo_profiles.get("repos", {})
+        if repo_full_name in repos:
+            return repos[repo_full_name]
+        for pattern, profile in repos.items():
+            if "*" in pattern and fnmatch.fnmatch(repo_full_name, pattern):
+                return profile
+        return self.config.get("default_profile", "server-side")
+
+    def profile_config(self, profile):
+        profiles = self.config["profiles"]
+        if profile not in profiles:
+            raise ValueError(
+                "Unknown risk profile %r. Valid profiles: %s"
+                % (profile, ", ".join(sorted(profiles)))
+            )
+        return profiles[profile]
+
+    def is_cloned(self, repo):
+        cloned = self.config.get("cloned_repos", {})
+        if cloned.get("treat_forks_as_cloned", True) and repo.get("fork"):
+            return True
+        return repo.get("full_name") in cloned.get("extra", [])
+
+    # ------------------------------------------------------------- classifying
+
+    def _list_for_profile(self, profile):
+        key = self.profile_config(profile).get("reject_list")
+        return self._lists.get(key, set()) if key else set()
+
+    def _classify_name(self, oso_name, profile):
+        """One resolved OSO license name -> (status, tier)."""
+        if oso_name == spdx.UNKNOWN:
+            return "unknown", "yellow"
+
+        # "Suspected X" sits in the same lists as X, so match on the full name
+        # first and fall back to the base name.
+        norm = spdx.canonical(oso_name)
+        base = norm[len("SUSPECTED "):] if norm.startswith("SUSPECTED ") else norm
+
+        def in_list(key):
+            return norm in self._lists[key] or base in self._lists[key]
+
+        if in_list("banned"):
+            return "banned", "red"
+        if in_list("approved"):
+            return "approved", "green"
+
+        rejected = self._list_for_profile(profile)
+        if norm in rejected or base in rejected:
+            return "rejected", "red"
+
+        if self.config.get("flag_rejected_by_stricter_profile", True):
+            if in_list("reject_distributed") or in_list("reject_server_side"):
+                return "rejected_by_stricter_profile", "yellow"
+
+        return "review", "yellow"
+
+    def classify_expression(self, raw_license, profile):
+        """Classify a raw SBOM license string, honouring SPDX AND/OR semantics.
+
+        OR is a choice, so the most permissive branch wins. AND means every
+        license applies, so the strictest branch wins.
+        """
+        if spdx.is_unknown(raw_license):
+            return {"status": "unknown", "tier": "yellow", "licenses": [], "raw": raw_license}
+
+        tree = spdx.split_expression(raw_license)
+        result = self._walk(tree, profile)
+        result["raw"] = raw_license
+        return result
+
+    def _walk(self, node, profile):
+        kind, value = node
+        if kind == "LEAF":
+            oso_name, _suspected = self.resolver.resolve_one(value)
+            if oso_name == spdx.UNKNOWN:
+                # An opaque placeholder means nothing was declared; a real but
+                # unlisted identifier is an OSO review item, and keeping the raw
+                # string tells the reviewer what to look at.
+                status = "unknown" if spdx.is_opaque(value) else "review"
+                return {"status": status, "tier": "yellow", "licenses": [value]}
+
+            status, tier = self._classify_name(oso_name, profile)
+            return {"status": status, "tier": tier, "licenses": [oso_name]}
+
+        branches = [self._walk(child, profile) for child in value]
+        if kind == "OR":
+            chosen = min(branches, key=lambda b: tier_rank(b["tier"]))
+        else:
+            chosen = max(branches, key=lambda b: tier_rank(b["tier"]))
+
+        licenses = []
+        for branch in branches:
+            licenses.extend(branch["licenses"])
+        return {"status": chosen["status"], "tier": chosen["tier"], "licenses": licenses}
+
+    def is_copyleft(self, oso_name):
+        norm = spdx.canonical(oso_name)
+        if norm.startswith("SUSPECTED "):
+            norm = norm[len("SUSPECTED "):]
+        return any(norm.startswith(family) for family in self._copyleft)
+
+    # -------------------------------------------------------------- exceptions
+
+    def find_approval(self, repo_full_name, licenses, package_name, today=None):
+        """The first matching, unexpired approval for this finding, if any."""
+        today = today or date.today()
+        for approval in self.exceptions.get("approvals", []):
+            if not _matches(approval.get("repo", "*"), repo_full_name):
+                continue
+            if not _matches(approval.get("package", "*"), package_name):
+                continue
+            license_pattern = approval.get("license", "*")
+            if license_pattern != "*" and not any(
+                _matches(license_pattern, lic) for lic in licenses
+            ):
+                continue
+
+            expires = approval.get("expires")
+            if expires:
+                try:
+                    if date.fromisoformat(expires) < today:
+                        self.expired_approvals.append(
+                            {
+                                "repo": repo_full_name,
+                                "license": license_pattern,
+                                "ticket": approval.get("ticket"),
+                                "expired": expires,
+                            }
+                        )
+                        continue
+                except ValueError:
+                    raise ValueError(
+                        "Approval for %s has an invalid 'expires' value %r "
+                        "(expected YYYY-MM-DD)" % (repo_full_name, expires)
+                    )
+            return approval
+        return None
+
+    # ---------------------------------------------------------------- messages
+
+    def message_for(self, status, context):
+        """Custom developer-facing text, per the doc's customizable warnings."""
+        messages = self.config["messages"]
+        for prefix, text in self._by_license_messages:
+            for lic in context.get("licenses", []):
+                bare = re.sub(r"^Suspected ", "", lic or "")
+                if bare.startswith(prefix) and status not in ("approved", "green"):
+                    return text.format(**context)
+
+        key = {"approved": "green"}.get(status, status)
+        template = messages.get(key, messages["review"])
+        return template.format(**context)
+
+
+def _matches(pattern, value):
+    if pattern == "*":
+        return True
+    if "*" in pattern:
+        return fnmatch.fnmatch(value or "", pattern)
+    return (value or "") == pattern

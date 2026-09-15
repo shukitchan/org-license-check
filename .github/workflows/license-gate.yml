@@ -1,0 +1,90 @@
+# Reusable build-time license gate.
+#
+# The monthly scan is the org-wide sweep; this is the "as early as possible"
+# check the requirements doc asks for. Other repositories call it from their own
+# build so a rejected license fails the build rather than waiting for month end.
+#
+# In the calling repository:
+#
+#   jobs:
+#     licenses:
+#       uses: my-org/org-license-check/.github/workflows/license-gate.yml@main
+#       with:
+#         profile: distributed     # optional; defaults to repo-profiles.json
+#       secrets:
+#         app-id: ${{ secrets.APP_ID }}
+#         app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+name: License gate
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: 'Force a risk profile (distributed, server-side, mobile, internal, ai-model)'
+        required: false
+        type: string
+      fail-on:
+        description: 'Tier that fails the build'
+        required: false
+        default: 'red'
+        type: string
+      policy-ref:
+        description: 'Ref of org-license-check to take the policy from'
+        required: false
+        default: 'main'
+        type: string
+    secrets:
+      app-id:
+        required: true
+      app-private-key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the policy repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/org-license-check
+          ref: ${{ inputs.policy-ref }}
+          path: .license-policy
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Check this repository's dependency licenses
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          PROFILE_ARG=""
+          if [ -n "${{ inputs.profile }}" ]; then
+            PROFILE_ARG="--profile ${{ inputs.profile }}"
+          fi
+          ./.license-policy/run-monthly.sh \
+            --org "${{ github.repository_owner }}" \
+            --repo "${{ github.repository }}" \
+            --fail-on "${{ inputs.fail-on }}" \
+            --no-incremental \
+            $PROFILE_ARG
+
+      - name: Publish result
+        if: always()
+        run: |
+          if [ -f .license-policy/output/LICENSE_REPORT.md ]; then
+            cat .license-policy/output/LICENSE_REPORT.md >> "$GITHUB_STEP_SUMMARY"
+          fi

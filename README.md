@@ -1,251 +1,347 @@
-# Organization-wide weekly dependency license check
+# Organization-wide dependency license check
 
-A GitHub Actions workflow that runs **weekly** and checks **dependency licenses** for **all repositories** in a GitHub organization, using a **GitHub App** for authentication and the GitHub Dependency Graph (SBOM) API.
+A monthly script that checks **dependency licenses across every repository** in a
+GitHub organization against the Open Source Office license matrix, and reports
+each repository as 🟢 green / 🟡 yellow / 🔴 red.
 
-## How it works
+It implements the rules in *Open Source Office – License Scanning Requirements
+Document*: the license matrix, the four tiers, per-repo legal risk profiles,
+customizable warning messages, admin overrides, build blocking, incremental
+reporting, and automatic Jira ticket creation.
 
-1. **Weekly schedule**: The workflow runs every Sunday at 00:00 UTC (configurable via `cron`).
-2. **GitHub App token**: The workflow uses `actions/create-github-app-token` to obtain an installation access token for your app.
-3. **List repos**: It calls `GET /installation/repositories` to list every repository the app can access (all repos in the org, if the app is installed on the organization).
-4. **Fetch SBOM per repo**: For each repo it calls `GET /repos/{owner}/{repo}/dependency-graph/sbom` to get the SPDX SBOM (only repos with dependency graph data will return results).
-5. **Parse licenses**: Scripts extract `licenseConcluded` and `licenseDeclared` from each package in the SBOM.
-6. **Report**: A JSON report and a Markdown summary are generated and uploaded as workflow artifacts. The job summary shows a short preview.
+Python 3.8+, no third-party dependencies.
 
-## Prerequisites
+---
 
-- A **GitHub App** installed on your **organization** (or on selected repositories).
-- The app must have permission to read the **dependency graph** (and metadata/contents as required by the token action).
-- A **repository** in that organization that will host this workflow (e.g. `org-license-check` or `org-automation`).
+## Quick start
 
-## 1. Create the GitHub App
+```bash
+# Offline demo against the bundled fixture — no credentials needed
+./run-monthly.sh --demo
 
-1. Go to **GitHub** → **Settings** (for the org) → **Developer settings** → **GitHub Apps** → **New GitHub App** (or use an existing app).
-2. Set:
-  - **Name**: e.g. `Org License Check`
-  - **Homepage URL**: your org or repo URL
-  - **Webhook**: Uncheck "Active" unless you need webhooks
-  - **Repository permissions**:
-    - **Dependency graph**: Read-only
-    - **Contents**: Read-only (optional; required by some token flows)
-    - **Metadata**: Read-only (default)
-3. Under **Where can this GitHub App be installed?** choose **Only on this account** (your org).
-4. Click **Create GitHub App**.
-5. Note the **App ID** (e.g. `123456`).
-6. Generate a **Private key** and save the `.pem` file securely. You will store the **entire PEM contents** (including `-----BEGIN RSA PRIVATE KEY-----` and `-----END RSA PRIVATE KEY-----`) in a secret.
-
-## 2. Install the app on the organization
-
-1. Go to the app’s **Install App** (or from the app settings, "Install App").
-2. Choose your **organization** and either **All repositories** or select the repos you want to include (the workflow will only see repos the installation can access).
-3. Complete the installation.
-
-## 3. Add secrets to the workflow repository
-
-In the **repository** where this workflow lives (e.g. `my-org/org-license-check`):
-
-1. **Settings** → **Secrets and variables** → **Actions**.
-2. Add:
-  - `**APP_ID`**: The GitHub App ID (numeric string).
-  - `**APP_PRIVATE_KEY**`: The full contents of the app’s private key (the `.pem` file). Paste the whole key, including the BEGIN/END lines.
-
-You do **not** need to store the Installation ID when using `actions/create-github-app-token` with `owner`; the action resolves the installation by owner (your org).
-
-## 4. Optional: set the organization name
-
-- By default the workflow uses the **repository owner** as the org (so in `my-org/org-license-check`, it uses `my-org`).
-- To override (e.g. run from a personal repo and target an org):
-  - Use **Variables** → **Organization variables** and set `ORG_NAME`, or
-  - When running **workflow_dispatch**, use the input **Organization name**.
-
-## 5. Enable dependency graph
-
-- Dependency graph must be **enabled** for the organization and for the repos you care about (it’s usually on by default for public repos and for private repos when enabled in org settings).
-- Only repos that have **dependency graph data** (from supported manifests/lockfiles or dependency submission) will have SBOM data; others will be listed as skipped in the report.
-
-## Workflow and scripts
-
-
-| Path                                         | Purpose                                                                        |
-| -------------------------------------------- | ------------------------------------------------------------------------------ |
-| `.github/workflows/license-check-weekly.yml` | Scheduled + manual workflow; generates token, runs scripts, uploads artifacts. |
-| `scripts/collect-org-licenses.js`            | Lists installation repos, fetches SBOM for each, outputs JSON report.          |
-| `scripts/report-to-markdown.js`              | Converts `report.json` to `LICENSE_REPORT.md`.                                 |
-
-
-## Output
-
-- **Job summary**: Short Markdown preview of the report.
-- **Artifacts**: `license-report-<run_number>` containing:
-  - `report.json` – full JSON (repos, packages, license counts).
-  - `LICENSE_REPORT.md` – human-readable report.
-  - `repos.log` – stderr from the collector (e.g. API errors).
-
-## Sample Output
-
-### Job summary (preview)
-
-```markdown
-# Dependency license report – my-org
-
-Generated: 2026-04-20T00:00:00.000Z
-
-- Repositories checked: 4
-- Repositories with dependency data: 3
-- Total packages: 12
-
-## License summary (all packages)
-
-| License | Count |
-|---------|-------|
-| MIT | 6 |
-| Apache-2.0 | 2 |
-| BSD-3-Clause | 2 |
-| ISC | 1 |
-| NOASSERTION | 1 |
-
-## By repository
-
-### my-org/api-server
-
-| Package | Version | Concluded | Declared |
-|---------|---------|-----------|----------|
-| express | 4.18.2 | MIT | MIT |
-| lodash | 4.17.21 | MIT | MIT |
-| helmet | 7.1.0 | MIT | MIT |
-| dotenv | 16.3.1 | BSD-3-Clause | BSD-3-Clause |
-
-### my-org/frontend
-
-| Package | Version | Concluded | Declared |
-|---------|---------|-----------|----------|
-| react | 18.2.0 | MIT | MIT |
-| react-dom | 18.2.0 | MIT | MIT |
-| axios | 1.6.2 | MIT | MIT |
-| typescript | 5.3.3 | Apache-2.0 | Apache-2.0 |
+# The real thing
+export GITHUB_TOKEN=ghp_...          # or APP_ID + APP_PRIVATE_KEY
+./run-monthly.sh --org my-org
 ```
 
-### `report.json`
+Reports land in `output/`:
+
+| File | Contents |
+|------|----------|
+| `LICENSE_REPORT.md` | Human-readable report: blocked repos, what's new, per-repo findings |
+| `findings.json` | Machine-readable findings (no raw package dumps) |
+| `report.json` | Everything, including the full package list per repo |
+| `jira-tickets.json` | Tickets that were created, or would be created without `--jira` |
+
+Exit codes: **0** clean · **1** the run itself failed · **2** policy failure
+(findings at or above `--fail-on`).
+
+---
+
+## The four tiers
+
+Straight from the requirements doc:
+
+| Tier | Meaning | Build |
+|------|---------|-------|
+| 🟢 **Green** | Every license is on the approved list, or there is no open source | Proceeds |
+| 🟡 **Yellow** | Proceeds, but OSO is notified and must review the use case | Proceeds |
+| 🔴 **Red** | A license rejected for this repo's risk profile, or on the banned list | **Blocked** |
+| 🔴 **Red – cloned repo** | Copyleft code inside a fork/clone; patching it needs OSO approval | **Blocked** |
+
+A repository's tier is the worst tier among its dependencies.
+
+## Legal risk profiles
+
+The same license is fine in one context and forbidden in another, so each repo
+is evaluated against a profile. `policy/repo-profiles.json` maps repositories to
+profiles; anything unlisted uses `default_profile` (**server-side**).
+
+| Profile | Applies to | Reject list used |
+|---------|-----------|------------------|
+| `distributed` | Shipped to customers | Reject Licenses Distributed Code |
+| `server-side` | Yahoo-operated backends (default) | Reject Licenses Server-Side Only |
+| `mobile` | App-store apps — distribution rules apply | Reject Licenses Distributed Code |
+| `internal` | Never leaves Yahoo | Banned list only |
+| `ai-model` | OSS AI models — always flagged for OSO review | Reject Licenses Distributed Code |
+
+So GPL-2.0 is 🔴 red in a `distributed` repo, 🟡 yellow in a `server-side` one,
+and AGPL is 🔴 red everywhere, including `internal`.
+
+Wildcards are supported, exact matches win:
 
 ```json
 {
-  "org": "my-org",
-  "generated_at": "2026-04-20T00:00:00.000Z",
-  "repos_checked": 4,
-  "repos_with_sbom": 3,
-  "repos_skipped": [
-    { "repo": "my-org/legacy-app", "reason": "no_sbom_or_404" }
-  ],
-  "total_packages": 12,
-  "by_repo": {
-    "my-org/api-server": [
-      { "name": "express",  "version": "4.18.2",  "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
-      { "name": "lodash",   "version": "4.17.21", "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
-      { "name": "helmet",   "version": "7.1.0",   "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
-      { "name": "dotenv",   "version": "16.3.1",  "licenseConcluded": "BSD-3-Clause", "licenseDeclared": "BSD-3-Clause" }
-    ],
-    "my-org/frontend": [
-      { "name": "react",      "version": "18.2.0", "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
-      { "name": "react-dom",  "version": "18.2.0", "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
-      { "name": "axios",      "version": "1.6.2",  "licenseConcluded": "MIT",          "licenseDeclared": "MIT" },
-      { "name": "typescript", "version": "5.3.3",  "licenseConcluded": "Apache-2.0",   "licenseDeclared": "Apache-2.0" }
-    ],
-    "my-org/data-pipeline": [
-      { "name": "requests",       "version": "2.31.0", "licenseConcluded": "Apache-2.0",   "licenseDeclared": "Apache-2.0" },
-      { "name": "python-dotenv",  "version": "1.0.0",  "licenseConcluded": "BSD-3-Clause", "licenseDeclared": "BSD-3-Clause" },
-      { "name": "certifi",        "version": "2023.11.17", "licenseConcluded": "ISC",      "licenseDeclared": "NOASSERTION" },
-      { "name": "urllib3",        "version": "2.1.0",  "licenseConcluded": "NOASSERTION",  "licenseDeclared": "NOASSERTION" }
-    ]
-  },
-  "license_summary": {
-    "MIT": 6,
-    "Apache-2.0": 2,
-    "BSD-3-Clause": 2,
-    "ISC": 1,
-    "NOASSERTION": 1
+  "repos": {
+    "my-org/android-app": "mobile",
+    "my-org/sdk-*": "distributed",
+    "my-org/internal-tools": "internal"
   }
 }
 ```
 
-### `LICENSE_REPORT.md`
+Override for one run with `--profile distributed`.
 
-```markdown
-# Dependency license report – my-org
+---
 
-Generated: 2026-04-20T00:00:00.000Z
+## Configuration
 
-- Repositories checked: 4
-- Repositories with dependency data: 3
-- Total packages: 12
+Everything an OSO admin needs to change lives in `policy/`. No code changes.
 
-## License summary (all packages)
+### `policy/license-matrix.json`
 
-| License | Count |
-|---------|-------|
-| MIT | 6 |
-| Apache-2.0 | 2 |
-| BSD-3-Clause | 2 |
-| ISC | 1 |
-| NOASSERTION | 1 |
+The doc's matrix, transcribed verbatim: 46 approved licenses, 26 rejected
+server-side, 118 rejected for distributed code, plus the banned list.
 
-## By repository
+SBOMs report SPDX identifiers (`Apache-2.0`) while the matrix uses OSO/Mend
+display names (`Apache 2.0`), so the file also carries:
 
-### my-org/api-server
+- **`aliases`** – SPDX id → OSO name (`BSD-3-Clause` → `BSD 3`)
+- **`patterns`** – family fallbacks for unrecognised variants (`^LGPL` → `LGPL`)
+- **`copyleft_families`** – what triggers the cloned-repo block
 
-| Package | Version | Concluded | Declared |
-|---------|---------|-----------|----------|
-| express | 4.18.2 | MIT | MIT |
-| lodash | 4.17.21 | MIT | MIT |
-| helmet | 7.1.0 | MIT | MIT |
-| dotenv | 16.3.1 | BSD-3-Clause | BSD-3-Clause |
+SPDX version suffixes are folded automatically, so `GPL-2.0`, `GPL-2.0-only`,
+`GPL-2.0-or-later` and `GPL-2.0+` all resolve to `GPL 2.0`.
 
-### my-org/frontend
+SPDX **expressions** are evaluated properly: `OR` is a choice so the most
+permissive branch wins (`LGPL-2.1-or-later OR Apache-2.0` is green), `AND`
+requires both so the strictest wins (`MIT AND GPL-3.0-only` is red).
 
-| Package | Version | Concluded | Declared |
-|---------|---------|-----------|----------|
-| react | 18.2.0 | MIT | MIT |
-| react-dom | 18.2.0 | MIT | MIT |
-| axios | 1.6.2 | MIT | MIT |
-| typescript | 5.3.3 | Apache-2.0 | Apache-2.0 |
+A license that is neither approved nor rejected is 🟡 yellow for OSO review, and
+its raw identifier is kept in the report so the reviewer can see what it was.
 
-### my-org/data-pipeline
+### `policy/policy.json`
 
-| Package | Version | Concluded | Declared |
-|---------|---------|-----------|----------|
-| requests | 2.31.0 | Apache-2.0 | Apache-2.0 |
-| python-dotenv | 1.0.0 | BSD-3-Clause | BSD-3-Clause |
-| certifi | 2023.11.17 | ISC | NOASSERTION |
-| urllib3 | 2.1.0 | NOASSERTION | NOASSERTION |
+Rules and messages:
 
-## Repositories skipped
+- `default_profile`, `profiles` – which reject list each profile uses
+- `messages` – the customizable warning text, per outcome and per license
+  family, with `{license}`, `{package}`, `{version}`, `{repo}`, `{profile}`
+- `flag_rejected_by_stricter_profile` – when true (default), a license that is
+  permitted today but would block distribution is reported yellow rather than
+  green. Set false to silence those.
+- `cloned_repos` – forks are detected automatically; list non-fork clones here
+- `jira` – project, issue type, which tiers get tickets
+- `fail_on` – default tier that fails the run
 
-- `my-org/legacy-app`: no_sbom_or_404
+### `policy/exceptions.json`
+
+OSO approvals and admin overrides. Covers three requirements at once: recording
+an approval so a repo stops being notified, unblocking a license for one repo,
+and letting an admin override a red.
+
+```json
+{
+  "approvals": [
+    {
+      "repo": "my-org/data-pipeline",
+      "license": "GPL 2.0",
+      "package": "legacy-*",
+      "tier": "green",
+      "approved_by": "oso-reviewer",
+      "ticket": "OSO-1234",
+      "expires": "2027-01-01"
+    }
+  ]
+}
 ```
 
-### `repos.log`
+`repo`, `license` and `package` accept `*` and trailing-`*` wildcards. `tier`
+is `green` to silence a finding entirely or `yellow` to downgrade a red to a
+notification. **Approvals expire**: once past `expires` the finding comes back
+and the report lists the approval under "Expired approvals". Approved findings
+stay in the report — greyed to green, with the approver and ticket — so the
+exception itself stays auditable.
 
-```text
-[my-org/api-server] fetching SBOM...
-[my-org/api-server] OK – 4 packages
-[my-org/frontend] fetching SBOM...
-[my-org/frontend] OK – 4 packages
-[my-org/data-pipeline] fetching SBOM...
-[my-org/data-pipeline] OK – 4 packages
-[my-org/legacy-app] fetching SBOM...
-[my-org/legacy-app] SKIP – no_sbom_or_404 (HTTP 404)
+---
+
+## Reporting
+
+The report is always complete, and adds a **"New since last run"** section by
+diffing against `state/last-run.json`. That is what makes the monthly cadence
+usable: month two shows the handful of things that changed, not all 4,000
+packages again.
+
+Findings are fingerprinted by repo + package + version + licenses + status, so
+a version bump that keeps the same license does not resurface, while a license
+change does. Run with `--no-incremental` for a standalone full report.
+
+---
+
+## Jira tickets
+
+Per the doc's "auto generate jira tickets when unapproved licenses are found".
+
+**Nothing is filed by default.** A normal run writes the tickets it *would*
+create to `output/jira-tickets.json` so OSO can review them. Add `--jira` to
+actually file them:
+
+```bash
+export JIRA_BASE_URL=https://my-org.atlassian.net
+export JIRA_EMAIL=oso-bot@my-org.com
+export JIRA_API_TOKEN=...
+./run-monthly.sh --org my-org --jira
 ```
+
+One ticket per repository per tier, deduplicated through
+`state/jira-index.json` so the monthly run does not re-file the same problem —
+a repo already tracked only gets a new ticket when new findings appear.
+
+---
+
+## Blocking builds early
+
+The monthly sweep is the safety net. To catch a bad license when it lands,
+`.github/workflows/license-gate.yml` is a reusable workflow other repos call
+from their own build:
+
+```yaml
+jobs:
+  licenses:
+    uses: my-org/org-license-check/.github/workflows/license-gate.yml@main
+    with:
+      profile: distributed
+    secrets:
+      app-id: ${{ secrets.APP_ID }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+It scans only the calling repository, uses the same central policy, and fails
+the build on 🔴 red.
+
+---
+
+## CLI
+
+```
+./run-monthly.sh [options]
+
+  --org NAME              GitHub organization (or $ORG_NAME)
+  --repo OWNER/NAME       Check only these repos; repeatable
+  --profile NAME          Force a risk profile for every repo
+  --fail-on TIER          green | yellow | red | red-cloned | never
+                          (default: policy.json fail_on, i.e. red)
+  --jira                  Actually create Jira tickets
+  --no-incremental        Skip the diff against the previous run
+  --from-report PATH      Re-evaluate a saved report.json without calling the API
+  --sbom PATH             Evaluate one local SPDX file (use with --repo)
+  --policy-dir DIR        Default: policy/
+  --out-dir DIR           Default: output/
+  --state-dir DIR         Default: state/
+  --demo                  Offline run against the bundled fixture
+  --quiet
+```
+
+`--from-report` is worth knowing about: collecting SBOMs for a large org takes
+the most time, so you can collect once and then re-run the policy repeatedly —
+useful when tuning the matrix or testing an exception.
+
+```bash
+./run-monthly.sh --org my-org                                  # collect + evaluate
+./run-monthly.sh --from-report output/report.json --profile distributed
+```
+
+---
+
+## Authentication
+
+Either works, locally and in CI:
+
+**A token** — a PAT with `repo` scope, or an installation token:
+
+```bash
+export GITHUB_TOKEN=ghp_...
+```
+
+**GitHub App credentials** — the script mints the installation token itself
+(RS256 signing is done with the `openssl` binary, so there is still nothing to
+`pip install`):
+
+```bash
+export APP_ID=123456
+export APP_PRIVATE_KEY="$(cat app-key.pem)"
+./run-monthly.sh --org my-org
+```
+
+The App needs **Dependency graph: Read-only** and **Metadata: Read-only**, and
+must be installed on the organization. With an installation token the script
+lists repos via `/installation/repositories`; with a PAT it falls back to
+`/orgs/{org}/repos`.
+
+---
+
+## Scheduling
+
+`.github/workflows/license-check-monthly.yml` runs at 06:00 UTC on the 1st of
+each month, uploads the reports as artifacts, writes the report into the job
+summary, and carries `state/` between runs with `actions/cache` so the
+incremental diff and Jira dedupe work.
+
+Locally, via cron:
+
+```cron
+0 9 1 * * cd /path/to/org-license-check && GITHUB_TOKEN=... ./run-monthly.sh --org my-org
+```
+
+---
+
+## Layout
+
+| Path | Purpose |
+|------|---------|
+| `run-monthly.sh` | Entry point |
+| `scripts/license_check.py` | CLI: collect → evaluate → report → Jira |
+| `scripts/licensecheck/policy.py` | The rule engine (matrix + profile + exceptions → tier) |
+| `scripts/licensecheck/spdx.py` | License normalization and SPDX expression parsing |
+| `scripts/licensecheck/github.py` | REST client: App JWT, pagination, rate-limit retry |
+| `scripts/licensecheck/report.py` | Markdown rendering and incremental diffing |
+| `scripts/licensecheck/jira.py` | Ticket building and creation |
+| `policy/` | Everything an OSO admin edits |
+| `tests/` | `python3 -m unittest discover -s tests` |
+
+---
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+59 tests covering license normalization, SPDX expression semantics, the tier
+rules per profile, exceptions and expiry, incremental diffing, message
+rendering, and an end-to-end run over a fixture. Several are integrity checks on
+the matrix itself — that nothing is both approved and rejected, that the
+server-side reject list is a subset of the distributed one, that every alias
+points at a license that actually exists, and that the transcribed list lengths
+still match the source document.
+
+---
 
 ## Limitations
 
-- **Dependency graph only**: Data comes from GitHub’s dependency graph (SBOM). Repos without supported manifests (e.g. npm, pip, Maven, Go modules) or without dependency submission will have no or limited data.
-- **No C/C++ etc.**: For ecosystems GitHub doesn’t parse (e.g. plain C/C++ without Conan/Bazel), consider adding a separate step that runs a license scanner (e.g. ScanCode) or uses the dependency submission API.
-- **Rate limits**: For large orgs, many SBOM requests in one run may hit rate limits; the scripts do not currently add delays (you can add a short `sleep` in the script if needed).
+- **Dependency graph coverage.** Data comes from GitHub's SBOM API, so a repo
+  needs a supported manifest (npm, pip, Maven, Go modules, …) or dependency
+  submission. Repos without it are listed under "Repositories skipped" rather
+  than passing silently. Ecosystems GitHub doesn't parse (plain C/C++ without
+  Conan or Bazel) need a scanner like ScanCode feeding the submission API.
+- **Declared licenses, not scanned ones.** The check trusts what packages
+  declare. It will not find a vendored GPL file inside an MIT-declared package;
+  that needs full-text scanning.
+- **The matrix is a snapshot.** `policy/license-matrix.json` reflects the doc as
+  written. When OSO revises it, update that file — the integrity tests will
+  catch a contradictory edit.
 
-## Running manually
+## Open items from the requirements doc
 
-Use **Actions** → **Weekly org dependency license check** → **Run workflow** and optionally set **Organization name**.
+Two action items are owned by OSO rather than this repo:
 
-## Extending
+- **The authoritative license matrix.** The transcribed matrix is the Mend list
+  from the doc. If OSO publishes a revised matrix, it replaces
+  `policy/license-matrix.json`.
+- **Reporting requirements** (incremental / full / license level). Implemented
+  as described above; the knobs are under `reporting` in `policy/policy.json`.
 
-- **Open an issue on findings**: In the workflow, add a step that reads `report.json`, checks for disallowed licenses, and uses `github.rest.issues.create` to open an issue (you’d need to pass a token with `issues: write` or use the default `GITHUB_TOKEN` for the same repo).
-- **Slack/email**: Add a step that posts `LICENSE_REPORT.md` or a summary to Slack or sends an email (e.g. via a webhook or API).
-
+One design decision worth confirming with OSO: repos not listed in
+`repo-profiles.json` default to **server-side**, which permits GPL. If OSO would
+rather unclassified repos be treated as distributed, change `default_profile` to
+`distributed` — expect most repos to go red until they are classified.

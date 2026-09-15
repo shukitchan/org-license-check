@@ -1,0 +1,12 @@
+{
+  "_note": "Legal risk profile per repository. Anything not listed falls back to policy.json -> default_profile (server-side). Valid values are the keys of policy.json -> profiles: distributed, server-side, mobile, internal, ai-model.",
+  "_wildcards": "Keys may use a trailing * to match a prefix, e.g. 'my-org/sdk-*'. Exact matches win over wildcards.",
+
+  "repos": {
+    "my-org/android-app": "mobile",
+    "my-org/ios-app": "mobile",
+    "my-org/sdk-*": "distributed",
+    "my-org/internal-tools": "internal",
+    "my-org/ml-models": "ai-model"
+  }
+}
