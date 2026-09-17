@@ -68,6 +68,21 @@ def log_to(stream):
 # ------------------------------------------------------------------ collection
 
 
+def package_ecosystem(package):
+    """The purl type for a package: npm, pypi, golang, githubactions, ...
+
+    Returns None when the SBOM carries no purl, which is how reports collected
+    by older versions of this script look.
+    """
+    for ref in package.get("externalRefs") or []:
+        if (ref.get("referenceType") or "").lower() != "purl":
+            continue
+        locator = ref.get("referenceLocator") or ""
+        if locator.startswith("pkg:"):
+            return locator[4:].split("/", 1)[0].split("@", 1)[0].strip().lower() or None
+    return None
+
+
 def extract_packages(sbom, repo_full_name):
     """SBOM packages, minus the SPDX document and the repository's own entry."""
     root_names = {
@@ -89,6 +104,7 @@ def extract_packages(sbom, repo_full_name):
                 "version": package.get("versionInfo"),
                 "licenseConcluded": package.get("licenseConcluded"),
                 "licenseDeclared": package.get("licenseDeclared"),
+                "ecosystem": package_ecosystem(package),
             }
         )
     return packages
@@ -202,6 +218,8 @@ def evaluate(repos, skipped, policy, org, args, log):
             "repos_checked": 0,
             "repos_with_sbom": 0,
             "total_packages": 0,
+            "packages_ignored": 0,
+            "ignored_ecosystems": sorted(policy.config.get("ignore_ecosystems", [])),
             "tiers": {"green": 0, "yellow": 0, "red": 0, "red-cloned": 0},
         },
         "license_summary": {},
@@ -211,6 +229,7 @@ def evaluate(repos, skipped, policy, org, args, log):
     }
 
     include_green = policy.config["reporting"].get("include_green_packages", False)
+    ignored_ecosystems = {e.strip().lower() for e in policy.config.get("ignore_ecosystems", [])}
 
     for repo in repos:
         full_name = repo["full_name"]
@@ -222,7 +241,13 @@ def evaluate(repos, skipped, policy, org, args, log):
         notes = []
         tiers_seen = ["green"]
 
+        ignored_here = 0
+
         for package in repo.get("packages", []):
+            if package.get("ecosystem") in ignored_ecosystems:
+                ignored_here += 1
+                continue
+
             raw = effective_license(package)
             verdict = policy.classify_expression(raw, profile_name)
             tier = verdict["tier"]
@@ -293,6 +318,7 @@ def evaluate(repos, skipped, policy, org, args, log):
         if repo.get("packages"):
             results["summary"]["repos_with_sbom"] += 1
         results["summary"]["total_packages"] += len(repo.get("packages", []))
+        results["summary"]["packages_ignored"] += ignored_here
         results["summary"]["tiers"][repo_tier] += 1
 
         results["repos"].append(
@@ -303,6 +329,7 @@ def evaluate(repos, skipped, policy, org, args, log):
                 "cloned": cloned,
                 "tier": repo_tier,
                 "packages_total": len(repo.get("packages", [])),
+                "packages_ignored": ignored_here,
                 "packages": repo.get("packages", []),
                 "findings": sorted(findings, key=lambda f: -tier_rank(f["tier"])),
                 "notes": notes,

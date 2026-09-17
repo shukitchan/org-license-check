@@ -159,6 +159,24 @@ def _parse_atom(tokens, index):
     return ("LEAF", " ".join(parts)), index
 
 
+def and_leaves(node):
+    """Leaf identifiers of a top-level, purely conjunctive expression.
+
+    Returns None when the expression is anything else -- notably when an OR
+    appears anywhere, which means a human authored it and its AND groups are
+    meaningful (`Apache-2.0 OR (Apache-2.0 AND MIT)` is a real choice).
+    """
+    kind, value = node
+    if kind != "AND":
+        return None
+    collected = []
+    for child in value:
+        if child[0] != "LEAF":
+            return None
+        collected.append(child[1])
+    return collected
+
+
 def leaves(node):
     """Every license identifier in an expression tree, left to right."""
     kind, value = node

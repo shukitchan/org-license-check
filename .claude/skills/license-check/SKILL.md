@@ -105,3 +105,10 @@ profiles and are not comparable across orgs.
   that, but make the edit outside this skill.
 - A scan reads GitHub's dependency graph for each repo's **default branch**, so
   it will not catch a bad dependency still sitting in an open pull request.
+- The report's "Packages excluded" row is expected, not a problem: GitHub
+  Actions are filtered out via `ignore_ecosystems` because they are build
+  tooling and carry no license in the SBOM. Mention the count if the user asks
+  why a total looks low.
+- A `multiple_detected` finding means GitHub reported several licenses for one
+  package, so the effective license is unclear. Do not describe it as if the
+  strictest one applies — it is a review item, not a violation.

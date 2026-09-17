@@ -126,9 +126,65 @@ class Policy:
             return {"status": "unknown", "tier": "yellow", "licenses": [], "raw": raw_license}
 
         tree = spdx.split_expression(raw_license)
-        result = self._walk(tree, profile)
+
+        detected = self.detection_dump(tree)
+        if detected is not None:
+            result = self._classify_detected_set(detected, profile)
+        else:
+            result = self._walk(tree, profile)
+
         result["raw"] = raw_license
         return result
+
+    def detection_dump(self, node):
+        """Leaves of an AND chain that is a scan dump, or None if it is real.
+
+        GitHub's SBOM does not always emit a legal expression. For many
+        packages it joins every license text it detected anywhere in the
+        tarball with AND:
+
+            django: BSD-3-Clause AND Python-2.0 AND Python-2.0
+                    AND GPL-1.0-or-later AND Python-2.0 AND BSD-3-Clause
+
+        Django is BSD-3-Clause; the GPL term is a stray file. Applying SPDX
+        conjunction semantics (all apply, so take the strictest) would call
+        that GPL and block it. Three tells separate a dump from an authored
+        expression: a real one never repeats a term, never cites a scanner's
+        LicenseRef, and rarely chains more than a couple of licenses.
+        """
+        leaves = spdx.and_leaves(node)
+        if leaves is None:
+            return None
+
+        canonical = [spdx.canonical(leaf) for leaf in leaves]
+        if len(canonical) != len(set(canonical)):
+            return leaves
+        if any(spdx.is_opaque(leaf) for leaf in leaves):
+            return leaves
+
+        minimum = self.config.get("detection_dump_min_terms", 3)
+        if len(leaves) >= minimum:
+            return leaves
+        return None
+
+    def _classify_detected_set(self, leaves, profile):
+        """A dump is a set of candidate licenses, not a conjunction."""
+        licenses = []
+        for leaf in leaves:
+            oso_name, _suspected = self.resolver.resolve_one(leaf)
+            name = leaf if oso_name == spdx.UNKNOWN else oso_name
+            if name not in licenses:
+                licenses.append(name)
+
+        # A banned license among the detected texts is still reported red.
+        # It is the hard legal line, so a person should confirm it really is
+        # incidental rather than have the tool decide for them.
+        for name in licenses:
+            status, _tier = self._classify_name(name, profile)
+            if status == "banned":
+                return {"status": "banned", "tier": "red", "licenses": licenses}
+
+        return {"status": "multiple_detected", "tier": "yellow", "licenses": licenses}
 
     def _walk(self, node, profile):
         kind, value = node
@@ -203,10 +259,13 @@ class Policy:
     def message_for(self, status, context):
         """Custom developer-facing text, per the doc's customizable warnings."""
         messages = self.config["messages"]
+        # A per-license message asserts what that license requires, which would
+        # contradict "several licenses detected, the effective one is unclear".
+        family_override = status not in ("approved", "green", "multiple_detected")
         for prefix, text in self._by_license_messages:
             for lic in context.get("licenses", []):
                 bare = re.sub(r"^Suspected ", "", lic or "")
-                if bare.startswith(prefix) and status not in ("approved", "green"):
+                if bare.startswith(prefix) and family_override:
                     return text.format(**context)
 
         key = {"approved": "green"}.get(status, status)

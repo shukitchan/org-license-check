@@ -1,9 +1,7 @@
 {
   "_source": "Open Source Office - License Scanning Requirements Document",
   "_note": "Rule-based policy an OSO admin can edit without touching code. Controls which reject list each risk profile uses, what tier each outcome maps to, and the message shown to developers.",
-
   "default_profile": "server-side",
-
   "_profiles_comment": "Each risk profile picks the reject list that applies to it. 'reject_list' is a key in license-matrix.json (or null for none).",
   "profiles": {
     "distributed": {
@@ -34,24 +32,36 @@
       "always_review_reason": "OSS AI model licenses (RAIL, Llama Community, Gemma, OpenRAIL-M and similar) carry use restrictions that a license identifier alone does not capture."
     }
   },
-
   "_flag_comment": "When true, a license that is rejected for a stricter profile but permitted for this repo's profile is reported as yellow rather than green -- e.g. GPL in a server-side repo is fine today but blocks any future distribution. Set false to silence those.",
   "flag_rejected_by_stricter_profile": true,
-
   "_cloned_comment": "Doc: 'Red Cloned repo - do not allow patching of open source software in cloned repo for certain license types (protect against copyleft)'. Forks are detected automatically; add any non-fork clone here.",
   "cloned_repos": {
     "treat_forks_as_cloned": true,
     "extra": []
   },
-
   "_tiers_comment": "Tier ordering is fixed in code (green < yellow < red < red-cloned). 'blocks_build' drives the exit code together with --fail-on.",
   "tiers": {
-    "green": { "label": "Green", "blocks_build": false, "notify_oso": false },
-    "yellow": { "label": "Yellow", "blocks_build": false, "notify_oso": true },
-    "red": { "label": "Red", "blocks_build": true, "notify_oso": true },
-    "red-cloned": { "label": "Red (cloned repo)", "blocks_build": true, "notify_oso": true }
+    "green": {
+      "label": "Green",
+      "blocks_build": false,
+      "notify_oso": false
+    },
+    "yellow": {
+      "label": "Yellow",
+      "blocks_build": false,
+      "notify_oso": true
+    },
+    "red": {
+      "label": "Red",
+      "blocks_build": true,
+      "notify_oso": true
+    },
+    "red-cloned": {
+      "label": "Red (cloned repo)",
+      "blocks_build": true,
+      "notify_oso": true
+    }
   },
-
   "_messages_comment": "Custom warning text per outcome. {license}, {package}, {version}, {repo}, {profile} are substituted. 'by_license' overrides the generic text for a specific OSO license name or family prefix.",
   "messages": {
     "green": "{license} is on the OSO approved list. No action needed.",
@@ -67,25 +77,36 @@
       "LGPL": "LGPL is weak copyleft: distributing it requires dynamic linking and relink rights. {package}@{version} may not ship in distributed code without Open Source Office approval of the linking model.",
       "Open Software": "The Open Software License has network-use obligations similar to AGPL. Not permitted. Remove {package}@{version}.",
       "European": "EUPL is copyleft with a compatibility clause. The Open Source Office must approve any use of {package}@{version}."
-    }
+    },
+    "multiple_detected": "Several licenses were detected in {package}@{version} ({license}), so the effective license is unclear. The Open Source Office needs to confirm which one governs before this can be treated as approved."
   },
-
+  "_ignore_comment": "Package ecosystems excluded from the scan. GitHub Actions are build tooling: they never ship in an artifact, so they create no distribution obligation, and GitHub's SBOM reports no license for them at all -- leaving them in made every repo with a workflow file yellow. Values are purl types (githubactions, npm, pypi, golang, gem, maven, ...). Ignored packages are counted in every report so the exclusion stays visible.",
+  "ignore_ecosystems": [
+    "githubactions"
+  ],
+  "_dump_comment": "An AND chain of this many licenses or more is treated as a scanner dump rather than a real conjunction. GitHub's SBOM joins every license text it found in a package with AND, so django arrives as 'BSD-3-Clause AND Python-2.0 AND GPL-1.0-or-later AND ...' and strictest-wins would call it GPL. Repeated terms and scanner LicenseRefs are always treated as a dump regardless of this number. Raise it to be stricter, set it very high to disable the length test.",
+  "detection_dump_min_terms": 3,
   "_reporting_comment": "Doc action item: 'Define reporting requirements (incremental/full/license level/etc)'. The report always contains the full picture; 'incremental' adds a New since last run section by diffing against state/last-run.json.",
   "reporting": {
     "incremental": true,
     "include_green_packages": false,
     "max_packages_per_repo_in_markdown": 100
   },
-
   "_jira_comment": "Doc: 'Ability auto generate jira tickets when a unapproved licenses are found'. Tickets are only created when --jira is passed; otherwise the intended tickets are written to jira-tickets.json. One ticket per repo per tier, deduplicated via state/jira-index.json.",
   "jira": {
     "project_key": "OSO",
     "issue_type": "Task",
-    "create_for_tiers": ["red", "red-cloned", "yellow"],
+    "create_for_tiers": [
+      "red",
+      "red-cloned",
+      "yellow"
+    ],
     "summary_template": "[{tier}] Unapproved dependency licenses in {repo}",
-    "labels": ["open-source-office", "license-scan"]
+    "labels": [
+      "open-source-office",
+      "license-scan"
+    ]
   },
-
   "_fail_comment": "Default severity at which the run exits non-zero (exit code 2). Override per run with --fail-on.",
   "fail_on": "red"
 }

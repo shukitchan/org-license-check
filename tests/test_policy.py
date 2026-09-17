@@ -679,5 +679,188 @@ class OrgResolutionTests(unittest.TestCase):
             self.assertEqual(code, 1, flag)
 
 
+class DetectionDumpTests(unittest.TestCase):
+    """GitHub's SBOM joins every detected license text with AND.
+
+    Applying conjunction semantics to that would call django GPL, because a
+    stray GPL file sits in its tarball. Real expressions must keep working.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.policy = Policy(POLICY_DIR)
+
+    def classify(self, expr, profile="distributed"):
+        return self.policy.classify_expression(expr, profile)
+
+    # --- dumps, taken verbatim from the yahoo-Edge scan
+
+    DJANGO = ("BSD-3-Clause AND Python-2.0 AND Python-2.0 AND GPL-1.0-or-later "
+              "AND Python-2.0 AND BSD-3-Clause AND Python-2.0.1")
+    GITDB = "BSD-2-Clause AND BSD-3-Clause AND GPL-1.0-or-later"
+    NOKOGIRI = ("Apache-1.1 AND Apache-2.0 AND BSD-3-Clause AND LGPL-2.0-only "
+                "AND LGPL-2.0-or-later AND MIT AND LicenseRef-github-NOASSERTION "
+                "AND X11 AND Zlib")
+    JETTY = "Apache-2.0 AND EPL-1.0 AND EPL-2.0 AND LicenseRef-github-NOASSERTION"
+
+    def test_django_is_not_gpl(self):
+        result = self.classify(self.DJANGO)
+        self.assertEqual(result["status"], "multiple_detected")
+        self.assertEqual(result["tier"], "yellow")
+
+    def test_repeated_terms_mark_a_dump(self):
+        # Python-2.0 appears three times; no authored expression repeats a term.
+        self.assertIsNotNone(
+            self.policy.detection_dump(spdx.split_expression(self.DJANGO)))
+
+    def test_duplicates_after_version_folding_mark_a_dump(self):
+        # LGPL-2.0-only and LGPL-2.0-or-later are one matrix entry.
+        self.assertIsNotNone(
+            self.policy.detection_dump(spdx.split_expression(self.NOKOGIRI)))
+
+    def test_scanner_license_ref_marks_a_dump(self):
+        self.assertEqual(self.classify(self.JETTY)["status"], "multiple_detected")
+
+    def test_long_chain_marks_a_dump(self):
+        # Three distinct terms, no duplicates, no LicenseRef -> the length test.
+        self.assertEqual(self.classify(self.GITDB)["status"], "multiple_detected")
+
+    def test_dump_lists_every_detected_license_for_the_reviewer(self):
+        licenses = self.classify(self.DJANGO)["licenses"]
+        self.assertIn("BSD 3", licenses)
+        self.assertIn("GPL 1.0", licenses)
+        self.assertEqual(len(licenses), len(set(licenses)), "duplicates leaked through")
+
+    def test_banned_license_in_a_dump_still_blocks(self):
+        # AGPL is the hard legal line: a person confirms it is incidental.
+        result = self.classify("MIT AND Apache-2.0 AND AGPL-3.0-only")
+        self.assertEqual(result["tier"], "red")
+        self.assertEqual(result["status"], "banned")
+
+    # --- expressions that must keep their SPDX meaning
+
+    def test_a_two_term_conjunction_is_still_a_conjunction(self):
+        result = self.classify("MIT AND GPL-3.0-only")
+        self.assertEqual(result["status"], "rejected")
+        self.assertEqual(result["tier"], "red")
+
+    def test_or_expressions_are_never_dumps(self):
+        self.assertEqual(self.classify("LGPL-2.1-or-later OR Apache-2.0")["tier"], "green")
+
+    def test_a_real_expression_mixing_or_and_and_is_untouched(self):
+        # Seen in the wild; the parenthesised ANDs are a genuine choice.
+        expr = ("Apache-2.0 OR BSD-2-Clause OR MIT OR (Apache-2.0 AND BSD-2-Clause) "
+                "OR (Apache-2.0 AND MIT) OR (BSD-2-Clause AND MIT)")
+        self.assertIsNone(self.policy.detection_dump(spdx.split_expression(expr)))
+        self.assertEqual(self.classify(expr)["tier"], "green")
+
+    def test_single_license_is_never_a_dump(self):
+        self.assertIsNone(self.policy.detection_dump(spdx.split_expression("MIT")))
+        self.assertEqual(self.classify("GPL-3.0-only")["status"], "rejected")
+
+    def test_threshold_is_configurable(self):
+        self.policy.config["detection_dump_min_terms"] = 99
+        try:
+            # With the length test disabled, gitdb's chain is a conjunction again.
+            self.assertEqual(self.classify(self.GITDB)["tier"], "red")
+        finally:
+            self.policy.config["detection_dump_min_terms"] = 3
+
+    def test_message_does_not_assert_a_single_license(self):
+        # The GPL family message would contradict "we are unsure which governs".
+        message = self.policy.message_for("multiple_detected", {
+            "license": "BSD 3, GPL 1.0", "licenses": ["BSD 3", "GPL 1.0"],
+            "package": "django", "version": "4.2", "repo": "r", "profile": "P",
+        })
+        self.assertIn("Several licenses", message)
+        self.assertNotIn("strong copyleft", message)
+
+
+class EcosystemFilterTests(unittest.TestCase):
+    """GitHub Actions are build tooling and carry no license in the SBOM.
+
+    Left in, they made 116 of 183 yellow repos yellow for that reason alone.
+    """
+
+    def test_purl_type_is_extracted(self):
+        cases = {
+            "pkg:githubactions/actions/checkout@9c091bb": "githubactions",
+            "pkg:npm/%40img/sharp@0.33.0": "npm",
+            "pkg:golang/github.com/hashicorp/hcl@v1.0.0": "golang",
+            "pkg:pypi/django@4.2": "pypi",
+            "pkg:gem/nokogiri@1.16.0": "gem",
+        }
+        for locator, expected in cases.items():
+            package = {"externalRefs": [
+                {"referenceType": "purl", "referenceLocator": locator}]}
+            self.assertEqual(license_check.package_ecosystem(package), expected, locator)
+
+    def test_missing_purl_is_none(self):
+        self.assertIsNone(license_check.package_ecosystem({}))
+        self.assertIsNone(license_check.package_ecosystem(
+            {"externalRefs": [{"referenceType": "cpe23Type", "referenceLocator": "cpe:x"}]}))
+
+    def test_extract_packages_records_the_ecosystem(self):
+        sbom = {"packages": [
+            {"SPDXID": "SPDXRef-a", "name": "actions/checkout", "versionInfo": "v4",
+             "externalRefs": [{"referenceType": "purl",
+                               "referenceLocator": "pkg:githubactions/actions/checkout@v4"}]},
+            {"SPDXID": "SPDXRef-b", "name": "express", "versionInfo": "4.18.2",
+             "licenseConcluded": "MIT",
+             "externalRefs": [{"referenceType": "purl",
+                               "referenceLocator": "pkg:npm/express@4.18.2"}]},
+        ]}
+        packages = license_check.extract_packages(sbom, "my-org/app")
+        self.assertEqual([p["ecosystem"] for p in packages], ["githubactions", "npm"])
+
+    def _evaluate(self, packages, ignore):
+        policy = Policy(POLICY_DIR)
+        policy.config["ignore_ecosystems"] = ignore
+        args = license_check.parse_args(["--org", "my-org"])
+        repos = [{"full_name": "my-org/app", "fork": False, "archived": False,
+                  "packages": packages}]
+        return license_check.evaluate(repos, [], policy, "my-org", args, lambda _m: None)
+
+    PACKAGES = [
+        {"name": "actions/checkout", "version": "9c091bb", "licenseConcluded": None,
+         "licenseDeclared": None, "ecosystem": "githubactions"},
+        {"name": "express", "version": "4.18.2", "licenseConcluded": "MIT",
+         "licenseDeclared": "MIT", "ecosystem": "npm"},
+    ]
+
+    def test_ignored_ecosystem_produces_no_findings(self):
+        results = self._evaluate(self.PACKAGES, ["githubactions"])
+        repo = results["repos"][0]
+        self.assertEqual(repo["tier"], "green")
+        self.assertEqual(repo["findings"], [])
+
+    def test_without_the_filter_the_action_is_a_finding(self):
+        results = self._evaluate(self.PACKAGES, [])
+        repo = results["repos"][0]
+        self.assertEqual(repo["tier"], "yellow")
+        self.assertEqual([f["package"] for f in repo["findings"]], ["actions/checkout"])
+
+    def test_exclusion_is_counted_not_hidden(self):
+        results = self._evaluate(self.PACKAGES, ["githubactions"])
+        summary = results["summary"]
+        self.assertEqual(summary["total_packages"], 2)
+        self.assertEqual(summary["packages_ignored"], 1)
+        self.assertEqual(summary["ignored_ecosystems"], ["githubactions"])
+        self.assertEqual(results["repos"][0]["packages_ignored"], 1)
+
+    def test_ignored_packages_stay_out_of_the_license_summary(self):
+        results = self._evaluate(self.PACKAGES, ["githubactions"])
+        self.assertEqual(results["license_summary"], {"MIT": 1})
+
+    def test_packages_without_an_ecosystem_are_never_filtered(self):
+        # Reports collected before this feature carry no ecosystem key.
+        legacy = [dict(p) for p in self.PACKAGES]
+        for p in legacy:
+            p.pop("ecosystem")
+        results = self._evaluate(legacy, ["githubactions"])
+        self.assertEqual(results["summary"]["packages_ignored"], 0)
+        self.assertEqual(results["repos"][0]["tier"], "yellow")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

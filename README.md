@@ -113,6 +113,42 @@ requires both so the strictest wins (`MIT AND GPL-3.0-only` is red).
 A license that is neither approved nor rejected is 🟡 yellow for OSO review, and
 its raw identifier is kept in the report so the reviewer can see what it was.
 
+**Scanner dumps are not conjunctions.** GitHub's SBOM often does not emit a
+legal expression — it joins every license text it detected anywhere in a
+package with `AND`:
+
+```
+django:  BSD-3-Clause AND Python-2.0 AND Python-2.0 AND GPL-1.0-or-later
+         AND Python-2.0 AND BSD-3-Clause AND Python-2.0.1
+```
+
+Django is BSD-3-Clause; the GPL term is a stray file in the tarball. Taking the
+strictest term, which is correct for a real conjunction, would call Django GPL
+and block it. Three tells separate a dump from an authored expression: a real
+one never repeats a term, never cites a scanner's `LicenseRef`, and rarely
+chains more than a couple of licenses. A dump is reported 🟡 yellow as
+"several licenses detected, effective license unclear", listing all of them,
+rather than red on the strictest. `detection_dump_min_terms` in `policy.json`
+tunes the length test; repeated terms and `LicenseRef`s always count as a dump.
+
+The one exception is a **banned** license inside a dump: that stays 🔴 red, so
+a person confirms it really is incidental rather than the tool deciding.
+
+### `policy/policy.json` — excluded ecosystems
+
+```json
+"ignore_ecosystems": ["githubactions"]
+```
+
+Packages from these purl types are skipped entirely. GitHub Actions are build
+tooling — they never ship in an artifact, so they create no distribution
+obligation, and GitHub's SBOM reports no license for them at all. Left in, they
+made 116 of 183 yellow repositories yellow for that reason alone.
+
+Exclusions are **counted, never hidden**: every report shows how many packages
+were skipped and which ecosystems were excluded. Packages with no purl (reports
+collected by older versions of this script) are never filtered.
+
 ### `policy/policy.json`
 
 Rules and messages:

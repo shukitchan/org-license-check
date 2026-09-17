@@ -83,6 +83,10 @@ def to_markdown(results, policy):
         "| Repositories checked | %d |" % summary["repos_checked"],
         "| Repositories with dependency data | %d |" % summary["repos_with_sbom"],
         "| Total packages | %d |" % summary["total_packages"],
+        "| Packages excluded (%s) | %d |" % (
+            ", ".join(summary.get("ignored_ecosystems") or ["none"]),
+            summary.get("packages_ignored", 0),
+        ),
         "| 🟢 Green | %d |" % tiers.get("green", 0),
         "| 🟡 Yellow (contact OSO) | %d |" % tiers.get("yellow", 0),
         "| 🔴 Red (blocked) | %d |" % tiers.get("red", 0),
@@ -245,6 +249,9 @@ def summarize_for_console(results, policy):
         "",
         "%s  %d repos checked, %d packages"
         % (results["org"], results["summary"]["repos_checked"], results["summary"]["total_packages"]),
+        "  excluded    %d package(s) from %s"
+        % (results["summary"].get("packages_ignored", 0),
+           ", ".join(results["summary"].get("ignored_ecosystems") or ["nothing"])),
         "  🟢 green      %d" % tiers.get("green", 0),
         "  🟡 yellow     %d  (contact OSO)" % tiers.get("yellow", 0),
         "  🔴 red        %d  (blocked)" % tiers.get("red", 0),
