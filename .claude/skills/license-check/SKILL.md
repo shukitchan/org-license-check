@@ -42,7 +42,15 @@ never invent an org.
 "$REPO/run-monthly.sh" --org <org>
 ```
 
-This takes a while on a large org: one SBOM fetch per repository.
+For several organizations, pass `--org` more than once — each is reported into
+its own folder and a combined summary is printed at the end:
+
+```bash
+"$REPO/run-monthly.sh" --org <org-a> --org <org-b>
+```
+
+This takes a while on a large org: one SBOM fetch per repository. Roughly half a
+second per repo, so a 500-repo org is about five minutes.
 
 ## Exit codes — read this before reporting a failure
 
@@ -58,7 +66,9 @@ with `--fail-on never` just to force a zero exit.
 
 ## Step 4 — Summarize
 
-Read `$REPO/output/LICENSE_REPORT.md` and report:
+Reports are per organization, under `$REPO/output/<org-slug>/` (the slug is the
+org name lowercased). Read `$REPO/output/<org-slug>/LICENSE_REPORT.md` and
+report, per organization:
 
 1. The tier counts (green / yellow / red / red-cloned)
 2. Every **blocked** repository with its offending licenses
@@ -66,15 +76,17 @@ Read `$REPO/output/LICENSE_REPORT.md` and report:
    usually the only part that matters
 4. Any expired approvals
 
-`$REPO/output/findings.json` holds the same data structured, if you need to
-filter or count precisely.
+`$REPO/output/<org-slug>/findings.json` holds the same data structured, if you
+need to filter or count precisely. With several organizations, summarize each
+one separately rather than merging them — the tiers depend on per-repo risk
+profiles and are not comparable across orgs.
 
 ## Usage variants
 
 | Intent | Command |
 |---|---|
 | One repo only | `"$REPO/run-monthly.sh" --org <org> --repo <owner>/<name> --no-incremental` |
-| Re-evaluate without re-fetching | `"$REPO/run-monthly.sh" --from-report "$REPO/output/report.json"` |
+| Re-evaluate without re-fetching | `"$REPO/run-monthly.sh" --org <org> --from-report "$REPO/output/<org-slug>/report.json"` |
 | Test a profile change | add `--profile distributed` (or `server-side`, `mobile`, `internal`, `ai-model`) |
 | Offline smoke test | `"$REPO/run-monthly.sh" --demo` |
 
@@ -82,7 +94,7 @@ filter or count precisely.
 
 - **Never pass `--jira`.** The script can file Jira tickets; this skill does not.
   If the user wants tickets filed, tell them to run it themselves.
-- **A normal run consumes the incremental state.** `state/last-run.json` records
+- **A normal run consumes the incremental state.** `state/<org-slug>/last-run.json` records
   what was seen, so the *next* run reports only what changed. For ad-hoc or
   exploratory runs use `--no-incremental` or `--from-report`, or you will burn
   the month's diff and the real run will report "0 new findings".

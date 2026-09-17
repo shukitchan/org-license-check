@@ -22,9 +22,12 @@ Python 3.8+, no third-party dependencies.
 # The real thing
 export GITHUB_TOKEN=ghp_...          # or APP_ID + APP_PRIVATE_KEY
 ./run-monthly.sh --org my-org
+
+# Several organizations in one run, each reported separately
+./run-monthly.sh --org my-org --org other-org
 ```
 
-Reports land in `output/`:
+Reports land in `output/<org>/` — one folder per organization:
 
 | File | Contents |
 |------|----------|
@@ -155,10 +158,55 @@ exception itself stays auditable.
 
 ---
 
+## Several organizations
+
+Each organization gets its own folder under `output/` and `state/`, named after
+a lowercased slug of the org name:
+
+```
+output/                       state/
+├── yahoo-edge/               ├── yahoo-edge/
+│   ├── LICENSE_REPORT.md     │   ├── last-run.json
+│   ├── report.json           │   └── jira-index.json
+│   ├── findings.json         └── yahoo-o11y/
+│   └── jira-tickets.json         ├── last-run.json
+└── yahoo-o11y/                   └── jira-index.json
+    └── ...
+```
+
+Partitioning `state/` is the part that matters. It holds the incremental
+baseline and the Jira index, so a shared one would make each organization diff
+against the previous organization's fingerprints — every finding would look new,
+and whichever org ran last would overwrite the baseline for all of them.
+
+Two ways to run several:
+
+```bash
+# One invocation; prints a combined summary table at the end
+./run-monthly.sh --org yahoo-edge --org yahoo-o11y --org yahoo-news
+
+# Or a loop, if you want per-org exit codes
+for org in yahoo-edge yahoo-o11y yahoo-news; do
+  ./run-monthly.sh --org "$org" || echo "$org needs attention"
+done
+```
+
+In a single invocation each organization is scanned in sequence into its own
+folders. If one fails, the others still run and the failure is reported at the
+end; the exit code is **1** if any organization failed to scan (the results are
+incomplete), **2** if all scanned cleanly but some have findings at or above
+`--fail-on`, otherwise **0**.
+
+The slug is lowercased deliberately: GitHub org names are case-insensitive, so
+`--org yahoo-Edge` and `--org yahoo-edge` must not build two separate baselines
+for the same organization.
+
+---
+
 ## Reporting
 
 The report is always complete, and adds a **"New since last run"** section by
-diffing against `state/last-run.json`. That is what makes the monthly cadence
+diffing against `state/<org>/last-run.json`. That is what makes the monthly cadence
 usable: month two shows the handful of things that changed, not all 4,000
 packages again.
 
@@ -173,7 +221,7 @@ change does. Run with `--no-incremental` for a standalone full report.
 Per the doc's "auto generate jira tickets when unapproved licenses are found".
 
 **Nothing is filed by default.** A normal run writes the tickets it *would*
-create to `output/jira-tickets.json` so OSO can review them. Add `--jira` to
+create to `output/<org>/jira-tickets.json` so OSO can review them. Add `--jira` to
 actually file them:
 
 ```bash
@@ -184,7 +232,7 @@ export JIRA_API_TOKEN=...
 ```
 
 One ticket per repository per tier, deduplicated through
-`state/jira-index.json` so the monthly run does not re-file the same problem —
+`state/<org>/jira-index.json` so the monthly run does not re-file the same problem —
 a repo already tracked only gets a new ticket when new findings appear.
 
 ---
@@ -214,7 +262,7 @@ dependencies.
 ```
 ./run-monthly.sh [options]
 
-  --org NAME              GitHub organization (or $ORG_NAME)
+  --org NAME              GitHub organization (or $ORG_NAME); repeatable
   --repo OWNER/NAME       Check only these repos; repeatable
   --profile NAME          Force a risk profile for every repo
   --fail-on TIER          green | yellow | red | red-cloned | never
@@ -224,8 +272,8 @@ dependencies.
   --from-report PATH      Re-evaluate a saved report.json without calling the API
   --sbom PATH             Evaluate one local SPDX file (use with --repo)
   --policy-dir DIR        Default: policy/
-  --out-dir DIR           Default: output/
-  --state-dir DIR         Default: state/
+  --out-dir DIR           Parent dir; reports go to <out-dir>/<org>/ (default: output/)
+  --state-dir DIR         Parent dir; state goes to <state-dir>/<org>/ (default: state/)
   --demo                  Offline run against the bundled fixture
   --quiet
 ```
@@ -236,7 +284,7 @@ useful when tuning the matrix or testing an exception.
 
 ```bash
 ./run-monthly.sh --org my-org                                  # collect + evaluate
-./run-monthly.sh --from-report output/report.json --profile distributed
+./run-monthly.sh --from-report output/my-org/report.json --profile distributed
 ```
 
 ---
@@ -273,7 +321,7 @@ lists repos via `/installation/repositories`; with a PAT it falls back to
 Run it from cron on the 1st of each month:
 
 ```cron
-0 9 1 * * cd /path/to/org-license-check && GITHUB_TOKEN=... ./run-monthly.sh --org my-org
+0 9 1 * * cd /path/to/org-license-check && GITHUB_TOKEN=... ./run-monthly.sh --org my-org --org other-org
 ```
 
 `state/` is what makes the monthly cadence work — it holds the previous run's

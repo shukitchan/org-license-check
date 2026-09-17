@@ -14,6 +14,7 @@ Exit codes:
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -31,13 +32,16 @@ def parse_args(argv):
         prog="license_check.py",
         description="Organization-wide dependency license compliance check.",
     )
-    parser.add_argument("--org", default=os.environ.get("ORG_NAME"),
-                        help="GitHub organization (default: $ORG_NAME)")
+    parser.add_argument("--org", action="append", default=None, metavar="ORG",
+                        help="GitHub organization; repeatable to scan several in "
+                             "one run (default: $ORG_NAME)")
     parser.add_argument("--repo", action="append", default=[], metavar="OWNER/NAME",
                         help="Check only these repositories; repeatable")
     parser.add_argument("--policy-dir", default=os.path.join(REPO_ROOT, "policy"))
-    parser.add_argument("--out-dir", default=os.path.join(REPO_ROOT, "output"))
-    parser.add_argument("--state-dir", default=os.path.join(REPO_ROOT, "state"))
+    parser.add_argument("--out-dir", default=os.path.join(REPO_ROOT, "output"),
+                        help="Parent directory; reports go to <out-dir>/<org>/")
+    parser.add_argument("--state-dir", default=os.path.join(REPO_ROOT, "state"),
+                        help="Parent directory; state goes to <state-dir>/<org>/")
     parser.add_argument("--profile", default=None,
                         help="Force a risk profile for every repo, ignoring repo-profiles.json")
     parser.add_argument("--fail-on", default=None,
@@ -90,7 +94,7 @@ def extract_packages(sbom, repo_full_name):
     return packages
 
 
-def collect(args, log):
+def collect(org, args, log):
     """Returns (repos_metadata, skipped). Each repo carries its package list."""
     if args.from_report:
         with open(args.from_report, "r", encoding="utf-8") as handle:
@@ -119,10 +123,10 @@ def collect(args, log):
         app_id = os.environ.get("APP_ID")
         private_key = os.environ.get("APP_PRIVATE_KEY")
         if app_id and private_key:
-            if not args.org:
+            if not org:
                 raise SystemExit("--org is required when authenticating as a GitHub App")
-            log("Minting an installation token for %s" % args.org)
-            token = github.installation_token(app_id, private_key, args.org)
+            log("Minting an installation token for %s" % org)
+            token = github.installation_token(app_id, private_key, org)
         else:
             raise SystemExit(
                 "No credentials. Set GITHUB_TOKEN, or APP_ID + APP_PRIVATE_KEY."
@@ -132,7 +136,7 @@ def collect(args, log):
     wanted = set(args.repo)
     repos, skipped = [], []
 
-    for repo in client.list_repos(args.org):
+    for repo in client.list_repos(org):
         full_name = repo["full_name"]
         if wanted and full_name not in wanted:
             continue
@@ -185,9 +189,9 @@ def effective_license(package):
     return concluded or declared or "NOASSERTION"
 
 
-def evaluate(repos, skipped, policy, args, log):
+def evaluate(repos, skipped, policy, org, args, log):
     results = {
-        "org": args.org or "installation",
+        "org": org or "installation",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "policy": {
             "matrix_source": policy.matrix.get("_source"),
@@ -312,8 +316,44 @@ def evaluate(repos, skipped, policy, args, log):
 # --------------------------------------------------------------------- output
 
 
-def write_outputs(results, policy, args, log):
-    os.makedirs(args.out_dir, exist_ok=True)
+_SLUG_UNSAFE = re.compile(r"[^a-z0-9._-]+")
+
+
+def org_slug(org):
+    """Directory name for one organization's reports and state.
+
+    Lowercased on purpose: GitHub organization names are case-insensitive, so
+    without folding, `--org yahoo-Edge` and `--org yahoo-edge` would build two
+    separate incremental baselines for the same organization on a
+    case-sensitive filesystem, and each month's diff would be wrong.
+    """
+    slug = _SLUG_UNSAFE.sub("-", (org or "installation").strip().lower()).strip("-.")
+    return slug or "installation"
+
+
+def resolve_orgs(args):
+    """The organizations to scan, de-duplicated, order preserved.
+
+    `[None]` means "whatever this installation token can see", which is the
+    App-credentials path where no org needs naming.
+    """
+    named = list(args.org or [])
+    if not named and os.environ.get("ORG_NAME"):
+        named = [os.environ["ORG_NAME"]]
+    if not named:
+        return [None]
+
+    seen, orgs = set(), []
+    for org in named:
+        key = org.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            orgs.append(org.strip())
+    return orgs or [None]
+
+
+def write_outputs(results, policy, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
 
     # findings.json omits the full package lists; report.json keeps everything.
     findings_only = json.loads(json.dumps(results))
@@ -321,10 +361,10 @@ def write_outputs(results, policy, args, log):
         repo.pop("packages", None)
 
     paths = {
-        "report": os.path.join(args.out_dir, "report.json"),
-        "findings": os.path.join(args.out_dir, "findings.json"),
-        "markdown": os.path.join(args.out_dir, "LICENSE_REPORT.md"),
-        "jira": os.path.join(args.out_dir, "jira-tickets.json"),
+        "report": os.path.join(out_dir, "report.json"),
+        "findings": os.path.join(out_dir, "findings.json"),
+        "markdown": os.path.join(out_dir, "LICENSE_REPORT.md"),
+        "jira": os.path.join(out_dir, "jira-tickets.json"),
     }
 
     with open(paths["report"], "w", encoding="utf-8") as handle:
@@ -337,8 +377,8 @@ def write_outputs(results, policy, args, log):
     return paths
 
 
-def handle_jira(results, policy, args, paths, log):
-    index_path = os.path.join(args.state_dir, "jira-index.json")
+def handle_jira(results, policy, args, paths, state_dir, log):
+    index_path = os.path.join(state_dir, "jira-index.json")
     index = jira.load_index(index_path)
     tickets = jira.build_tickets(results, policy, index)
 
@@ -372,57 +412,126 @@ def handle_jira(results, policy, args, paths, log):
         json.dump(created, handle, indent=2)
 
 
-def main(argv=None):
-    args = parse_args(argv if argv is not None else sys.argv[1:])
-    log = (lambda _msg: None) if args.quiet else log_to(sys.stderr)
+def run_one_org(org, args, log):
+    """Scan one organization into its own output and state directories."""
+    # A fresh Policy per organization: expired approvals accumulate on the
+    # instance, and one org's expiries must not show up in another's report.
+    policy = Policy(args.policy_dir)
 
-    try:
-        policy = Policy(args.policy_dir)
-    except (OSError, ValueError) as err:
-        print("Could not load policy from %s: %s" % (args.policy_dir, err), file=sys.stderr)
-        return 1
+    slug = org_slug(org)
+    out_dir = os.path.join(args.out_dir, slug)
+    state_dir = os.path.join(args.state_dir, slug)
 
-    try:
-        repos, skipped = collect(args, log)
-    except (github.GitHubError, OSError) as err:
-        print("Collection failed: %s" % err, file=sys.stderr)
-        return 1
+    repos, skipped = collect(org, args, log)
+    results = evaluate(repos, skipped, policy, org, args, log)
+    results["output_dir"] = out_dir
 
-    results = evaluate(repos, skipped, policy, args, log)
-
-    state_path = os.path.join(args.state_dir, "last-run.json")
-    if not args.no_incremental and policy.config["reporting"].get("incremental", True):
+    state_path = os.path.join(state_dir, "last-run.json")
+    incremental = (not args.no_incremental
+                   and policy.config["reporting"].get("incremental", True))
+    if incremental:
         report.mark_new_findings(results, report.load_state(state_path))
 
-    paths = write_outputs(results, policy, args, log)
-
-    try:
-        handle_jira(results, policy, args, paths, log)
-    except jira.JiraError as err:
-        print("Jira step failed: %s" % err, file=sys.stderr)
-        return 1
+    paths = write_outputs(results, policy, out_dir)
+    handle_jira(results, policy, args, paths, state_dir, log)
 
     if not args.no_incremental:
         report.save_state(state_path, results)
 
+    fail_on = args.fail_on or policy.config.get("fail_on", "red")
+    blocked = []
+    if fail_on != "never":
+        threshold = tier_rank(fail_on)
+        blocked = [r for r in results["repos"] if tier_rank(r["tier"]) >= threshold]
+
+    return {
+        "org": org or "installation",
+        "slug": slug,
+        "out_dir": out_dir,
+        "results": results,
+        "policy": policy,
+        "blocked": blocked,
+        "fail_on": fail_on,
+    }
+
+
+def main(argv=None):
+    args = parse_args(argv if argv is not None else sys.argv[1:])
+    log = (lambda _msg: None) if args.quiet else log_to(sys.stderr)
+
+    # Fail fast on a broken policy directory, before any network work.
+    try:
+        Policy(args.policy_dir)
+    except (OSError, ValueError) as err:
+        print("Could not load policy from %s: %s" % (args.policy_dir, err), file=sys.stderr)
+        return 1
+
+    orgs = resolve_orgs(args)
+
+    if len(orgs) > 1:
+        for flag, value in (("--from-report", args.from_report), ("--sbom", args.sbom)):
+            if value:
+                print("%s describes a single organization; pass one --org with it."
+                      % flag, file=sys.stderr)
+                return 1
+
+    outcomes = []
+    run_failed = False
+
+    for org in orgs:
+        if len(orgs) > 1:
+            log("")
+            log("===== %s =====" % (org or "installation"))
+        try:
+            outcomes.append(run_one_org(org, args, log))
+        except (github.GitHubError, jira.JiraError, OSError, ValueError) as err:
+            print("[%s] failed: %s" % (org or "installation", err), file=sys.stderr)
+            run_failed = True
+
+    if not outcomes:
+        return 1
+
     if not args.quiet:
-        print(report.summarize_for_console(results, policy))
-        print("\nReports written to %s" % args.out_dir)
+        for outcome in outcomes:
+            print(report.summarize_for_console(outcome["results"], outcome["policy"]))
+            print("\nReports written to %s" % outcome["out_dir"])
+        if len(outcomes) > 1:
+            print(_combined_summary(outcomes))
         sys.stdout.flush()
 
-    fail_on = args.fail_on or policy.config.get("fail_on", "red")
-    if fail_on == "never":
-        return 0
-    threshold = tier_rank(fail_on)
-    blocked = [r for r in results["repos"] if tier_rank(r["tier"]) >= threshold]
-    if blocked:
+    blocking = [o for o in outcomes if o["blocked"]]
+    for outcome in blocking:
         print(
-            "\nPolicy failure: %d repositor%s at or above '%s'."
-            % (len(blocked), "y" if len(blocked) == 1 else "ies", fail_on),
+            "\nPolicy failure: [%s] %d repositor%s at or above '%s'."
+            % (outcome["org"], len(outcome["blocked"]),
+               "y" if len(outcome["blocked"]) == 1 else "ies", outcome["fail_on"]),
             file=sys.stderr,
         )
-        return EXIT_POLICY_FAILURE
-    return 0
+
+    # A failed run outranks a policy failure: the report is incomplete, which
+    # needs fixing before its verdict means anything.
+    if run_failed:
+        return 1
+    return EXIT_POLICY_FAILURE if blocking else 0
+
+
+def _combined_summary(outcomes):
+    lines = ["", "All organizations:", ""]
+    lines.append("  %-24s %7s %7s %7s %7s %7s" % ("org", "repos", "green", "yellow", "red", "cloned"))
+    totals = {"repos": 0, "green": 0, "yellow": 0, "red": 0, "red-cloned": 0}
+    for outcome in outcomes:
+        summary = outcome["results"]["summary"]
+        tiers = summary["tiers"]
+        lines.append("  %-24s %7d %7d %7d %7d %7d" % (
+            outcome["org"][:24], summary["repos_checked"], tiers.get("green", 0),
+            tiers.get("yellow", 0), tiers.get("red", 0), tiers.get("red-cloned", 0)))
+        totals["repos"] += summary["repos_checked"]
+        for tier in ("green", "yellow", "red", "red-cloned"):
+            totals[tier] += tiers.get(tier, 0)
+    lines.append("  %-24s %7d %7d %7d %7d %7d" % (
+        "TOTAL", totals["repos"], totals["green"], totals["yellow"],
+        totals["red"], totals["red-cloned"]))
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

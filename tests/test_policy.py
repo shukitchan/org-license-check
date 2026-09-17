@@ -256,7 +256,7 @@ class EndToEndTests(unittest.TestCase):
             "--org", "my-org", "--from-report", FIXTURE,
             "--out-dir", cls.out, "--state-dir", cls.state, "--quiet",
         ])
-        with open(os.path.join(cls.out, "report.json"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(cls.out, "my-org", "report.json"), "r", encoding="utf-8") as handle:
             cls.results = json.load(handle)
         cls.by_repo = {r["full_name"]: r for r in cls.results["repos"]}
 
@@ -307,17 +307,17 @@ class EndToEndTests(unittest.TestCase):
 
     def test_markdown_and_jira_artifacts_exist(self):
         for name in ("LICENSE_REPORT.md", "findings.json", "jira-tickets.json"):
-            self.assertTrue(os.path.exists(os.path.join(self.out, name)), name)
+            self.assertTrue(os.path.exists(os.path.join(self.out, "my-org", name)), name)
 
     def test_jira_dry_run_files_tickets_for_blocked_repos(self):
-        with open(os.path.join(self.out, "jira-tickets.json"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(self.out, "my-org", "jira-tickets.json"), "r", encoding="utf-8") as handle:
             tickets = json.load(handle)
         repos = {t["repo"] for t in tickets}
         self.assertIn("my-org/analytics-api", repos)
         self.assertTrue(all(t["existing_issue"] is None for t in tickets))
 
     def test_findings_json_omits_full_package_lists(self):
-        with open(os.path.join(self.out, "findings.json"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(self.out, "my-org", "findings.json"), "r", encoding="utf-8") as handle:
             findings = json.load(handle)
         self.assertNotIn("packages", findings["repos"][0])
 
@@ -337,7 +337,7 @@ class EndToEndTests(unittest.TestCase):
             "--out-dir", out, "--state-dir", os.path.join(self.tmp, "s3"),
             "--fail-on", "never", "--quiet",
         ])
-        with open(os.path.join(out, "report.json"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(out, "my-org", "report.json"), "r", encoding="utf-8") as handle:
             forced = {r["full_name"]: r for r in json.load(handle)["repos"]}
         # GPL is only yellow server-side, but red once everything is distributed.
         self.assertEqual(forced["my-org/analytics-api"]["tier"], "red")
@@ -351,12 +351,12 @@ class IncrementalTests(unittest.TestCase):
                   "--state-dir", state, "--fail-on", "never", "--quiet"]
 
         license_check.main(common)
-        with open(os.path.join(out, "report.json"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(out, "my-org", "report.json"), "r", encoding="utf-8") as handle:
             first = json.load(handle)
         self.assertTrue(first["incremental"]["first_run"])
 
         license_check.main(common)
-        with open(os.path.join(out, "report.json"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(out, "my-org", "report.json"), "r", encoding="utf-8") as handle:
             second = json.load(handle)
         self.assertFalse(second["incremental"]["first_run"])
         self.assertEqual(second["incremental"]["new_findings"], 0)
@@ -364,8 +364,8 @@ class IncrementalTests(unittest.TestCase):
     def test_a_changed_finding_shows_as_new(self):
         tmp = tempfile.mkdtemp()
         state = os.path.join(tmp, "state")
-        os.makedirs(state)
-        with open(os.path.join(state, "last-run.json"), "w", encoding="utf-8") as handle:
+        os.makedirs(os.path.join(state, "my-org"))
+        with open(os.path.join(state, "my-org", "last-run.json"), "w", encoding="utf-8") as handle:
             json.dump({"generated_at": "2026-08-01T00:00:00+00:00",
                        "fingerprints": ["my-org/analytics-api|iuwsgi|2.0.21|GPL 2.0|"
                                         "rejected_by_stricter_profile"]}, handle)
@@ -373,7 +373,7 @@ class IncrementalTests(unittest.TestCase):
         out = os.path.join(tmp, "out")
         license_check.main(["--org", "my-org", "--from-report", FIXTURE, "--out-dir", out,
                             "--state-dir", state, "--fail-on", "never", "--quiet"])
-        with open(os.path.join(out, "report.json"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(out, "my-org", "report.json"), "r", encoding="utf-8") as handle:
             results = json.load(handle)
 
         self.assertGreater(results["incremental"]["new_findings"], 0)
@@ -553,6 +553,130 @@ class GitHubClientTests(unittest.TestCase):
         with self.assertRaises(github.GitHubError) as caught:
             list(client.list_repos(None))
         self.assertIn("organization name is required", str(caught.exception))
+
+
+class PerOrgOutputTests(unittest.TestCase):
+    """Reports and state are partitioned per organization.
+
+    Several orgs are scanned each month from one checkout, so a shared
+    state directory would make each org diff against the previous org's
+    fingerprints -- every finding would look new and the baseline would be
+    overwritten by whichever org ran last.
+    """
+
+    def run_org(self, org, out, state, extra=None):
+        argv = ["--org", org, "--from-report", FIXTURE, "--out-dir", out,
+                "--state-dir", state, "--fail-on", "never", "--quiet"]
+        return license_check.main(argv + (extra or []))
+
+    def read(self, out, slug):
+        with open(os.path.join(out, slug, "report.json"), encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def test_slug_is_lowercased_and_sanitized(self):
+        self.assertEqual(license_check.org_slug("yahoo-Edge"), "yahoo-edge")
+        self.assertEqual(license_check.org_slug("yahoo-edge"), "yahoo-edge")
+        self.assertEqual(license_check.org_slug("My Org/Weird"), "my-org-weird")
+        self.assertEqual(license_check.org_slug(None), "installation")
+        self.assertEqual(license_check.org_slug("  "), "installation")
+
+    def test_slug_never_escapes_the_parent_directory(self):
+        for hostile in ("../../etc", "..", "/", "a/../../b"):
+            slug = license_check.org_slug(hostile)
+            self.assertNotIn("/", slug, hostile)
+            self.assertNotEqual(slug.strip("."), "", hostile)
+
+    def test_all_four_artifacts_land_in_the_org_folder(self):
+        tmp = tempfile.mkdtemp()
+        out, state = os.path.join(tmp, "out"), os.path.join(tmp, "state")
+        self.run_org("yahoo-Edge", out, state)
+
+        for name in ("report.json", "findings.json", "LICENSE_REPORT.md", "jira-tickets.json"):
+            self.assertTrue(os.path.exists(os.path.join(out, "yahoo-edge", name)), name)
+        self.assertTrue(os.path.exists(os.path.join(state, "yahoo-edge", "last-run.json")))
+        # Nothing written loose in the parent.
+        self.assertEqual(os.listdir(out), ["yahoo-edge"])
+
+    def test_two_orgs_keep_independent_baselines(self):
+        tmp = tempfile.mkdtemp()
+        out, state = os.path.join(tmp, "out"), os.path.join(tmp, "state")
+
+        self.run_org("alpha-org", out, state)
+        self.run_org("beta-org", out, state)
+
+        alpha = self.read(out, "alpha-org")
+        beta = self.read(out, "beta-org")
+
+        # beta must not inherit alpha's fingerprints.
+        self.assertTrue(alpha["incremental"]["first_run"])
+        self.assertTrue(beta["incremental"]["first_run"],
+                        "beta diffed against alpha's baseline")
+        self.assertEqual(alpha["org"], "alpha-org")
+        self.assertEqual(beta["org"], "beta-org")
+        self.assertEqual(sorted(os.listdir(state)), ["alpha-org", "beta-org"])
+
+    def test_rerunning_one_org_does_not_reset_the_other(self):
+        tmp = tempfile.mkdtemp()
+        out, state = os.path.join(tmp, "out"), os.path.join(tmp, "state")
+
+        self.run_org("alpha-org", out, state)
+        self.run_org("beta-org", out, state)
+        self.run_org("alpha-org", out, state)          # alpha's second month
+
+        alpha = self.read(out, "alpha-org")
+        self.assertFalse(alpha["incremental"]["first_run"])
+        self.assertEqual(alpha["incremental"]["new_findings"], 0)
+
+        # beta's baseline is untouched by alpha's re-run.
+        with open(os.path.join(state, "beta-org", "last-run.json"), encoding="utf-8") as handle:
+            self.assertTrue(json.load(handle)["fingerprints"])
+
+    def test_report_records_its_own_output_directory(self):
+        tmp = tempfile.mkdtemp()
+        out, state = os.path.join(tmp, "out"), os.path.join(tmp, "state")
+        self.run_org("alpha-org", out, state)
+        self.assertEqual(self.read(out, "alpha-org")["output_dir"],
+                         os.path.join(out, "alpha-org"))
+
+
+class OrgResolutionTests(unittest.TestCase):
+    def resolve(self, *orgs, **env):
+        args = license_check.parse_args([a for org in orgs for a in ("--org", org)])
+        previous = os.environ.get("ORG_NAME")
+        if "org_name" in env:
+            os.environ["ORG_NAME"] = env["org_name"]
+        elif "ORG_NAME" in os.environ:
+            del os.environ["ORG_NAME"]
+        try:
+            return license_check.resolve_orgs(args)
+        finally:
+            if previous is None:
+                os.environ.pop("ORG_NAME", None)
+            else:
+                os.environ["ORG_NAME"] = previous
+
+    def test_repeatable_flag_collects_every_org(self):
+        self.assertEqual(self.resolve("a", "b", "c"), ["a", "b", "c"])
+
+    def test_duplicates_are_dropped_case_insensitively(self):
+        self.assertEqual(self.resolve("yahoo-Edge", "yahoo-edge", "other"),
+                         ["yahoo-Edge", "other"])
+
+    def test_env_var_is_the_fallback(self):
+        self.assertEqual(self.resolve(org_name="from-env"), ["from-env"])
+
+    def test_no_org_anywhere_means_installation_scope(self):
+        self.assertEqual(self.resolve(), [None])
+
+    def test_single_org_flags_are_rejected_with_several_orgs(self):
+        tmp = tempfile.mkdtemp()
+        for flag, value in (("--from-report", FIXTURE), ("--sbom", FIXTURE)):
+            code = license_check.main([
+                "--org", "a", "--org", "b", flag, value,
+                "--out-dir", os.path.join(tmp, "o"), "--state-dir", os.path.join(tmp, "s"),
+                "--quiet",
+            ])
+            self.assertEqual(code, 1, flag)
 
 
 if __name__ == "__main__":
