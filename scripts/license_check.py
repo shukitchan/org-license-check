@@ -3,7 +3,7 @@
 
 Collects the dependency graph (SBOM) for every repository in a GitHub
 organization, applies the Open Source Office license matrix and risk-profile
-rules, and reports each repository as green / yellow / red / red-cloned.
+rules, and reports each repository as green / yellow / red.
 
 Exit codes:
     0  no findings at or above --fail-on
@@ -45,7 +45,7 @@ def parse_args(argv):
     parser.add_argument("--profile", default=None,
                         help="Force a risk profile for every repo, ignoring repo-profiles.json")
     parser.add_argument("--fail-on", default=None,
-                        choices=["green", "yellow", "red", "red-cloned", "never"],
+                        choices=["green", "yellow", "red", "never"],
                         help="Exit 2 at this tier or worse (default: policy.json fail_on)")
     parser.add_argument("--jira", action="store_true",
                         help="Actually create Jira tickets (default: write jira-tickets.json only)")
@@ -220,7 +220,7 @@ def evaluate(repos, skipped, policy, org, args, log):
             "total_packages": 0,
             "packages_ignored": 0,
             "ignored_ecosystems": sorted(policy.config.get("ignore_ecosystems", [])),
-            "tiers": {"green": 0, "yellow": 0, "red": 0, "red-cloned": 0},
+            "tiers": {"green": 0, "yellow": 0, "red": 0},
         },
         "license_summary": {},
         "repos": [],
@@ -235,7 +235,6 @@ def evaluate(repos, skipped, policy, org, args, log):
         full_name = repo["full_name"]
         profile_name = args.profile or policy.profile_for(full_name)
         profile = policy.profile_config(profile_name)
-        cloned = policy.is_cloned(repo)
 
         findings = []
         notes = []
@@ -258,12 +257,6 @@ def evaluate(repos, skipped, policy, org, args, log):
                 results["license_summary"][license_name] = (
                     results["license_summary"].get(license_name, 0) + 1
                 )
-
-            # Cloned-repo rule: copyleft inside a fork blocks patching outright.
-            if cloned and tier_rank(tier) >= tier_rank("yellow"):
-                if any(policy.is_copyleft(lic) for lic in licenses):
-                    tier = "red-cloned"
-                    status = "cloned"
 
             context = {
                 "license": ", ".join(licenses) or raw,
@@ -307,11 +300,6 @@ def evaluate(repos, skipped, policy, org, args, log):
         if profile.get("always_review"):
             notes.append(profile.get("always_review_reason", "Requires OSO review."))
             tiers_seen.append("yellow")
-        if cloned:
-            notes.append(
-                "Cloned/forked repository: patching copyleft-licensed code here "
-                "requires Open Source Office approval."
-            )
 
         repo_tier = worst(tiers_seen)
         results["summary"]["repos_checked"] += 1
@@ -326,7 +314,6 @@ def evaluate(repos, skipped, policy, org, args, log):
                 "full_name": full_name,
                 "profile": profile_name,
                 "profile_label": profile["label"],
-                "cloned": cloned,
                 "tier": repo_tier,
                 "packages_total": len(repo.get("packages", [])),
                 "packages_ignored": ignored_here,
@@ -544,20 +531,19 @@ def main(argv=None):
 
 def _combined_summary(outcomes):
     lines = ["", "All organizations:", ""]
-    lines.append("  %-24s %7s %7s %7s %7s %7s" % ("org", "repos", "green", "yellow", "red", "cloned"))
-    totals = {"repos": 0, "green": 0, "yellow": 0, "red": 0, "red-cloned": 0}
+    lines.append("  %-24s %7s %7s %7s %7s" % ("org", "repos", "green", "yellow", "red"))
+    totals = {"repos": 0, "green": 0, "yellow": 0, "red": 0}
     for outcome in outcomes:
         summary = outcome["results"]["summary"]
         tiers = summary["tiers"]
-        lines.append("  %-24s %7d %7d %7d %7d %7d" % (
+        lines.append("  %-24s %7d %7d %7d %7d" % (
             outcome["org"][:24], summary["repos_checked"], tiers.get("green", 0),
-            tiers.get("yellow", 0), tiers.get("red", 0), tiers.get("red-cloned", 0)))
+            tiers.get("yellow", 0), tiers.get("red", 0)))
         totals["repos"] += summary["repos_checked"]
-        for tier in ("green", "yellow", "red", "red-cloned"):
+        for tier in ("green", "yellow", "red"):
             totals[tier] += tiers.get(tier, 0)
-    lines.append("  %-24s %7d %7d %7d %7d %7d" % (
-        "TOTAL", totals["repos"], totals["green"], totals["yellow"],
-        totals["red"], totals["red-cloned"]))
+    lines.append("  %-24s %7d %7d %7d %7d" % (
+        "TOTAL", totals["repos"], totals["green"], totals["yellow"], totals["red"]))
     return "\n".join(lines)
 
 

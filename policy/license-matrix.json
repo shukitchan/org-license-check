@@ -83,8 +83,6 @@
     "Suspected AGPL 3.0 with Commons Clause", "Suspected AGPL 3.0 with OpenSSL Exception"
   ],
 
-  "_copyleft_comment": "Licenses that trigger the cloned-repo patching block (doc: 'do not allow patching of open source software in cloned repo for certain license types'). Defaults to every strong/weak copyleft family in reject_distributed.",
-  "copyleft_families": ["AGPL", "GPL", "LGPL", "Mozilla", "Eclipse", "Open Software", "European", "CeCILL", "Microsoft Reciprocal", "ODC Open Database"],
 
   "_aliases_comment": "normalized SPDX id -> OSO license name. Normalization: uppercase, separators -> space, collapse whitespace. A 'Suspected ' prefix is stripped before lookup and re-applied afterwards.",
   "aliases": {

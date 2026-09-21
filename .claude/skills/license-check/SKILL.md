@@ -70,7 +70,7 @@ Reports are per organization, under `$REPO/output/<org-slug>/` (the slug is the
 org name lowercased). Read `$REPO/output/<org-slug>/LICENSE_REPORT.md` and
 report, per organization:
 
-1. The tier counts (green / yellow / red / red-cloned)
+1. The tier counts (green / yellow / red)
 2. Every **blocked** repository with its offending licenses
 3. The **New since last run** section, if present — on a monthly run this is
    usually the only part that matters

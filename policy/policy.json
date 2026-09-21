@@ -34,12 +34,7 @@
   },
   "_flag_comment": "When true, a license that is rejected for a stricter profile but permitted for this repo's profile is reported as yellow rather than green -- e.g. GPL in a server-side repo is fine today but blocks any future distribution. Set false to silence those.",
   "flag_rejected_by_stricter_profile": true,
-  "_cloned_comment": "Doc: 'Red Cloned repo - do not allow patching of open source software in cloned repo for certain license types (protect against copyleft)'. Forks are detected automatically; add any non-fork clone here.",
-  "cloned_repos": {
-    "treat_forks_as_cloned": true,
-    "extra": []
-  },
-  "_tiers_comment": "Tier ordering is fixed in code (green < yellow < red < red-cloned). 'blocks_build' drives the exit code together with --fail-on.",
+  "_tiers_comment": "Tier ordering is fixed in code (green < yellow < red). 'blocks_build' drives the exit code together with --fail-on.",
   "tiers": {
     "green": {
       "label": "Green",
@@ -55,11 +50,6 @@
       "label": "Red",
       "blocks_build": true,
       "notify_oso": true
-    },
-    "red-cloned": {
-      "label": "Red (cloned repo)",
-      "blocks_build": true,
-      "notify_oso": true
     }
   },
   "_messages_comment": "Custom warning text per outcome. {license}, {package}, {version}, {repo}, {profile} are substituted. 'by_license' overrides the generic text for a specific OSO license name or family prefix.",
@@ -70,7 +60,6 @@
     "rejected_by_stricter_profile": "{license} is permitted for {profile} use but would block distribution. If {repo} may ever ship to customers, contact the Open Source Office before relying on {package}@{version}.",
     "review": "{license} is not on the OSO approved or rejected lists. The Open Source Office needs to review this use of {package}@{version}.",
     "unknown": "No license could be determined for {package}@{version}. Declare the license or contact the Open Source Office.",
-    "cloned": "{repo} is a cloned/forked repository containing {license} code ({package}@{version}). Patching copyleft-licensed code in a clone is not permitted without Open Source Office approval.",
     "by_license": {
       "AGPL": "AGPL obligations extend to users reached over a network, so it is banned for all Yahoo code regardless of how it is deployed. Remove {package}@{version}.",
       "GPL": "GPL is strong copyleft. It may not ship in distributed code. Contact the Open Source Office before using {package}@{version}.",
@@ -98,7 +87,6 @@
     "issue_type": "Task",
     "create_for_tiers": [
       "red",
-      "red-cloned",
       "yellow"
     ],
     "summary_template": "[{tier}] Unapproved dependency licenses in {repo}",

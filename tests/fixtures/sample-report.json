@@ -55,7 +55,7 @@
     },
     {
       "full_name": "my-org/forked-cache",
-      "fork": true,
+      "fork": false,
       "archived": false,
       "packages": [
         { "name": "cache-core", "version": "2.0.0", "licenseConcluded": "MPL-2.0", "licenseDeclared": "MPL-2.0" },

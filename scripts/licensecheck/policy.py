@@ -2,10 +2,12 @@
 
 Implements the four-tier model from the requirements doc:
 
-    green       all licenses approved (or no open source at all)
-    yellow      proceed, but the Open Source Office is notified
-    red         blocked; the license is rejected for this repo's risk profile
-    red-cloned  blocked; copyleft code inside a cloned/forked repository
+    green   all licenses approved (or no open source at all)
+    yellow  proceed, but the Open Source Office is notified
+    red     blocked; the license is rejected for this repo's risk profile
+
+Every repository is treated the same way: there is no separate handling for
+forks or clones. See "Deviations from the requirements doc" in the README.
 """
 
 import fnmatch
@@ -16,7 +18,7 @@ from datetime import date
 
 from . import spdx
 
-TIER_ORDER = ["green", "yellow", "red", "red-cloned"]
+TIER_ORDER = ["green", "yellow", "red"]
 
 
 def tier_rank(tier):
@@ -45,9 +47,6 @@ class Policy:
             key: {spdx.canonical(n) for n in self.matrix.get(key, [])}
             for key in ("approved", "reject_server_side", "reject_distributed", "banned")
         }
-        self._copyleft = [
-            spdx.canonical(f) for f in self.matrix.get("copyleft_families", [])
-        ]
         # Longest first so "AGPL" does not shadow a more specific prefix.
         self._by_license_messages = sorted(
             self.config["messages"].get("by_license", {}).items(),
@@ -75,12 +74,6 @@ class Policy:
                 % (profile, ", ".join(sorted(profiles)))
             )
         return profiles[profile]
-
-    def is_cloned(self, repo):
-        cloned = self.config.get("cloned_repos", {})
-        if cloned.get("treat_forks_as_cloned", True) and repo.get("fork"):
-            return True
-        return repo.get("full_name") in cloned.get("extra", [])
 
     # ------------------------------------------------------------- classifying
 
@@ -210,12 +203,6 @@ class Policy:
         for branch in branches:
             licenses.extend(branch["licenses"])
         return {"status": chosen["status"], "tier": chosen["tier"], "licenses": licenses}
-
-    def is_copyleft(self, oso_name):
-        norm = spdx.canonical(oso_name)
-        if norm.startswith("SUSPECTED "):
-            norm = norm[len("SUSPECTED "):]
-        return any(norm.startswith(family) for family in self._copyleft)
 
     # -------------------------------------------------------------- exceptions
 

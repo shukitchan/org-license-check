@@ -285,10 +285,11 @@ class EndToEndTests(unittest.TestCase):
         gpl = [f for f in repo["findings"] if f["package"] == "reporting-lib"][0]
         self.assertEqual(gpl["tier"], "yellow")
 
-    def test_fork_with_copyleft_is_red_cloned(self):
+    def test_forks_are_treated_like_any_other_repo(self):
+        # The fork/clone tier was removed: only the licenses decide.
         repo = self.by_repo["my-org/forked-cache"]
-        self.assertTrue(repo["cloned"])
-        self.assertEqual(repo["tier"], "red-cloned")
+        self.assertNotIn("cloned", repo)
+        self.assertEqual(repo["tier"], "yellow")   # Mozilla 2.0, server-side
 
     def test_existing_approval_is_applied(self):
         # policy/exceptions.json approves GPL 2.0 in my-org/data-pipeline.
@@ -413,7 +414,7 @@ class MessageTests(unittest.TestCase):
         context = {"license": "L", "licenses": ["L"], "package": "p", "version": "1",
                    "repo": "r", "profile": "P"}
         for status in ("green", "banned", "rejected", "rejected_by_stricter_profile",
-                       "review", "unknown", "cloned"):
+                       "review", "unknown", "multiple_detected"):
             self.assertTrue(self.policy.message_for(status, context))
 
 

@@ -50,9 +50,10 @@ Straight from the requirements doc:
 | 🟢 **Green** | Every license is on the approved list, or there is no open source | Proceeds |
 | 🟡 **Yellow** | Proceeds, but OSO is notified and must review the use case | Proceeds |
 | 🔴 **Red** | A license rejected for this repo's risk profile, or on the banned list | **Blocked** |
-| 🔴 **Red – cloned repo** | Copyleft code inside a fork/clone; patching it needs OSO approval | **Blocked** |
 
-A repository's tier is the worst tier among its dependencies.
+A repository's tier is the worst tier among its dependencies. Every repository
+is evaluated the same way — forks and clones get no special treatment (see
+[Deviations from the requirements doc](#deviations-from-the-requirements-doc)).
 
 ## Legal risk profiles
 
@@ -101,7 +102,6 @@ display names (`Apache 2.0`), so the file also carries:
 
 - **`aliases`** – SPDX id → OSO name (`BSD-3-Clause` → `BSD 3`)
 - **`patterns`** – family fallbacks for unrecognised variants (`^LGPL` → `LGPL`)
-- **`copyleft_families`** – what triggers the cloned-repo block
 
 SPDX version suffixes are folded automatically, so `GPL-2.0`, `GPL-2.0-only`,
 `GPL-2.0-or-later` and `GPL-2.0+` all resolve to `GPL 2.0`.
@@ -159,7 +159,6 @@ Rules and messages:
 - `flag_rejected_by_stricter_profile` – when true (default), a license that is
   permitted today but would block distribution is reported yellow rather than
   green. Set false to silence those.
-- `cloned_repos` – forks are detected automatically; list non-fork clones here
 - `jira` – project, issue type, which tiers get tickets
 - `fail_on` – default tier that fails the run
 
@@ -301,7 +300,7 @@ dependencies.
   --org NAME              GitHub organization (or $ORG_NAME); repeatable
   --repo OWNER/NAME       Check only these repos; repeatable
   --profile NAME          Force a risk profile for every repo
-  --fail-on TIER          green | yellow | red | red-cloned | never
+  --fail-on TIER          green | yellow | red | never
                           (default: policy.json fail_on, i.e. red)
   --jira                  Actually create Jira tickets
   --no-incremental        Skip the diff against the previous run
@@ -439,6 +438,24 @@ still match the source document.
 - **The matrix is a snapshot.** `policy/license-matrix.json` reflects the doc as
   written. When OSO revises it, update that file — the integrity tests will
   catch a contradictory edit.
+
+## Deviations from the requirements doc
+
+**The cloned-repo tier is not implemented.** The doc asks for a fourth tier —
+*"Red Cloned repo - do not allow patching of open source software in cloned repo
+for certain license types (protect against copyleft)"* — blocking copyleft
+inside a fork or clone.
+
+That was built and then deliberately removed: every repository is now evaluated
+purely on its dependency licenses, with no fork or clone distinction. The rule
+had never fired in practice (none of the 507 repositories scanned in yahoo-Edge
+is a fork), and it added a tier, a `copyleft_families` list and a
+`cloned_repos` config block that all existed only to serve it.
+
+If OSO wants it back, it is recoverable from git history — see the commit that
+removed it for the full mechanism.
+
+---
 
 ## Open items from the requirements doc
 

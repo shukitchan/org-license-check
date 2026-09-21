@@ -33,7 +33,7 @@ def save_index(path, index):
 def build_tickets(results, policy, index):
     """Tickets that should exist for this run, minus the ones already filed."""
     config = policy.config["jira"]
-    wanted_tiers = set(config.get("create_for_tiers", ["red", "red-cloned"]))
+    wanted_tiers = set(config.get("create_for_tiers", ["red"]))
     tickets = []
 
     for repo in results["repos"]:
@@ -89,8 +89,6 @@ def _description(repo, findings, policy):
         "Risk profile: %s (%s)" % (repo["profile"], profile["label"]),
         "Tier: %s" % tier_label,
     ]
-    if repo["cloned"]:
-        lines.append("This is a cloned/forked repository.")
     lines += ["", "Unapproved licenses:", ""]
     for finding in findings[:50]:
         lines.append(

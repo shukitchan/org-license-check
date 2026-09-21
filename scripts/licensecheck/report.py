@@ -5,7 +5,7 @@ import os
 
 from .policy import tier_rank
 
-TIER_ICON = {"green": "🟢", "yellow": "🟡", "red": "🔴", "red-cloned": "🔴"}
+TIER_ICON = {"green": "🟢", "yellow": "🟡", "red": "🔴"}
 
 
 def fingerprint(repo_name, finding):
@@ -90,7 +90,6 @@ def to_markdown(results, policy):
         "| 🟢 Green | %d |" % tiers.get("green", 0),
         "| 🟡 Yellow (contact OSO) | %d |" % tiers.get("yellow", 0),
         "| 🔴 Red (blocked) | %d |" % tiers.get("red", 0),
-        "| 🔴 Red – cloned repo | %d |" % tiers.get("red-cloned", 0),
         "",
     ]
 
@@ -163,13 +162,8 @@ def to_markdown(results, policy):
         )
         lines.append("")
         lines.append(
-            "Risk profile: **%s** (%s)%s · %d packages"
-            % (
-                repo["profile"],
-                repo["profile_label"],
-                " · cloned/forked repository" if repo["cloned"] else "",
-                repo["packages_total"],
-            )
+            "Risk profile: **%s** (%s) · %d packages"
+            % (repo["profile"], repo["profile_label"], repo["packages_total"])
         )
         lines.append("")
 
@@ -255,7 +249,6 @@ def summarize_for_console(results, policy):
         "  🟢 green      %d" % tiers.get("green", 0),
         "  🟡 yellow     %d  (contact OSO)" % tiers.get("yellow", 0),
         "  🔴 red        %d  (blocked)" % tiers.get("red", 0),
-        "  🔴 red-cloned %d  (blocked)" % tiers.get("red-cloned", 0),
     ]
     blocked = [r for r in results["repos"] if tier_rank(r["tier"]) >= tier_rank("red")]
     if blocked:
