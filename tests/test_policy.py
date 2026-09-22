@@ -478,8 +478,8 @@ class GitHubClientTests(unittest.TestCase):
     """
 
     ORG_PAGE = [
-        {"full_name": "yahoo-Edge/alpha", "owner": {"login": "yahoo-Edge"}},
-        {"full_name": "yahoo-Edge/beta", "owner": {"login": "yahoo-Edge"}},
+        {"full_name": "Example-Org/alpha", "owner": {"login": "Example-Org"}},
+        {"full_name": "Example-Org/beta", "owner": {"login": "Example-Org"}},
     ]
 
     def _client(self, on_installation):
@@ -504,16 +504,16 @@ class GitHubClientTests(unittest.TestCase):
             )
 
         client, calls = self._client(deny)
-        repos = list(client.list_repos("yahoo-Edge"))
+        repos = list(client.list_repos("Example-Org"))
 
         self.assertEqual([r["full_name"] for r in repos],
-                         ["yahoo-Edge/alpha", "yahoo-Edge/beta"])
-        self.assertTrue(any(p.startswith("/orgs/yahoo-Edge/repos") for p in calls),
+                         ["Example-Org/alpha", "Example-Org/beta"])
+        self.assertTrue(any(p.startswith("/orgs/Example-Org/repos") for p in calls),
                         "never fell back to the org listing: %s" % calls)
 
     def test_installation_token_uses_the_installation_listing(self):
         page = {"repositories": [
-            {"full_name": "yahoo-Edge/alpha", "owner": {"login": "yahoo-Edge"}},
+            {"full_name": "Example-Org/alpha", "owner": {"login": "Example-Org"}},
         ]}
 
         client = github.Client("token-placeholder", log=lambda _m: None)
@@ -526,14 +526,14 @@ class GitHubClientTests(unittest.TestCase):
             raise AssertionError("should not reach the org listing: %s" % path)
 
         client.request = fake_request
-        repos = list(client.list_repos("yahoo-Edge"))
-        self.assertEqual([r["full_name"] for r in repos], ["yahoo-Edge/alpha"])
+        repos = list(client.list_repos("Example-Org"))
+        self.assertEqual([r["full_name"] for r in repos], ["Example-Org/alpha"])
 
     def test_owner_filter_is_case_insensitive(self):
-        # GitHub org names are case-insensitive; "yahoo-Edge" and "yahoo-edge"
+        # GitHub org names are case-insensitive; "Example-Org" and "example-org"
         # are the same org and must not filter each other out.
         page = {"repositories": [
-            {"full_name": "yahoo-Edge/alpha", "owner": {"login": "yahoo-Edge"}},
+            {"full_name": "Example-Org/alpha", "owner": {"login": "Example-Org"}},
         ]}
 
         client = github.Client("token-placeholder", log=lambda _m: None)
@@ -544,7 +544,7 @@ class GitHubClientTests(unittest.TestCase):
             raise AssertionError("should not reach the org listing")
 
         client.request = fake_request
-        self.assertEqual(len(list(client.list_repos("yahoo-edge"))), 1)
+        self.assertEqual(len(list(client.list_repos("example-org"))), 1)
 
     def test_missing_org_with_a_pat_is_a_clear_error(self):
         def deny():
@@ -575,8 +575,8 @@ class PerOrgOutputTests(unittest.TestCase):
             return json.load(handle)
 
     def test_slug_is_lowercased_and_sanitized(self):
-        self.assertEqual(license_check.org_slug("yahoo-Edge"), "yahoo-edge")
-        self.assertEqual(license_check.org_slug("yahoo-edge"), "yahoo-edge")
+        self.assertEqual(license_check.org_slug("Example-Org"), "example-org")
+        self.assertEqual(license_check.org_slug("example-org"), "example-org")
         self.assertEqual(license_check.org_slug("My Org/Weird"), "my-org-weird")
         self.assertEqual(license_check.org_slug(None), "installation")
         self.assertEqual(license_check.org_slug("  "), "installation")
@@ -590,13 +590,13 @@ class PerOrgOutputTests(unittest.TestCase):
     def test_all_four_artifacts_land_in_the_org_folder(self):
         tmp = tempfile.mkdtemp()
         out, state = os.path.join(tmp, "out"), os.path.join(tmp, "state")
-        self.run_org("yahoo-Edge", out, state)
+        self.run_org("Example-Org", out, state)
 
         for name in ("report.json", "findings.json", "LICENSE_REPORT.md", "jira-tickets.json"):
-            self.assertTrue(os.path.exists(os.path.join(out, "yahoo-edge", name)), name)
-        self.assertTrue(os.path.exists(os.path.join(state, "yahoo-edge", "last-run.json")))
+            self.assertTrue(os.path.exists(os.path.join(out, "example-org", name)), name)
+        self.assertTrue(os.path.exists(os.path.join(state, "example-org", "last-run.json")))
         # Nothing written loose in the parent.
-        self.assertEqual(os.listdir(out), ["yahoo-edge"])
+        self.assertEqual(os.listdir(out), ["example-org"])
 
     def test_two_orgs_keep_independent_baselines(self):
         tmp = tempfile.mkdtemp()
@@ -660,8 +660,8 @@ class OrgResolutionTests(unittest.TestCase):
         self.assertEqual(self.resolve("a", "b", "c"), ["a", "b", "c"])
 
     def test_duplicates_are_dropped_case_insensitively(self):
-        self.assertEqual(self.resolve("yahoo-Edge", "yahoo-edge", "other"),
-                         ["yahoo-Edge", "other"])
+        self.assertEqual(self.resolve("Example-Org", "example-org", "other"),
+                         ["Example-Org", "other"])
 
     def test_env_var_is_the_fallback(self):
         self.assertEqual(self.resolve(org_name="from-env"), ["from-env"])
@@ -694,7 +694,7 @@ class DetectionDumpTests(unittest.TestCase):
     def classify(self, expr, profile="distributed"):
         return self.policy.classify_expression(expr, profile)
 
-    # --- dumps, taken verbatim from the yahoo-Edge scan
+    # --- dumps, taken verbatim from a real organization scan
 
     DJANGO = ("BSD-3-Clause AND Python-2.0 AND Python-2.0 AND GPL-1.0-or-later "
               "AND Python-2.0 AND BSD-3-Clause AND Python-2.0.1")
@@ -780,7 +780,7 @@ class DetectionDumpTests(unittest.TestCase):
 class EcosystemFilterTests(unittest.TestCase):
     """GitHub Actions are build tooling and carry no license in the SBOM.
 
-    Left in, they made 116 of 183 yellow repos yellow for that reason alone.
+    Left in, they made most yellow repos yellow for that reason alone.
     """
 
     def test_purl_type_is_extracted(self):

@@ -11,7 +11,7 @@
     },
     "server-side": {
       "label": "Web-based application (server-side backend)",
-      "description": "Runs only on Yahoo-operated infrastructure; not conveyed to users.",
+      "description": "Runs only on infrastructure the organization operates; not conveyed to users.",
       "reject_list": "reject_server_side"
     },
     "mobile": {
@@ -21,7 +21,7 @@
     },
     "internal": {
       "label": "Internal use only",
-      "description": "Never leaves Yahoo and is not offered as a network service. Only the banned list blocks.",
+      "description": "Never leaves the organization and is not offered as a network service. Only the banned list blocks.",
       "reject_list": null
     },
     "ai-model": {
@@ -55,13 +55,13 @@
   "_messages_comment": "Custom warning text per outcome. {license}, {package}, {version}, {repo}, {profile} are substituted. 'by_license' overrides the generic text for a specific OSO license name or family prefix.",
   "messages": {
     "green": "{license} is on the OSO approved list. No action needed.",
-    "banned": "{license} is on the OSO banned list and is not permitted in any Yahoo repository. Remove {package}@{version} or contact the Open Source Office for an exception.",
+    "banned": "{license} is on the OSO banned list and is not permitted in any repository. Remove {package}@{version} or contact the Open Source Office for an exception.",
     "rejected": "{license} is not permitted for {profile} code ({package}@{version}). Remove the dependency, replace it, or file an exception with the Open Source Office.",
     "rejected_by_stricter_profile": "{license} is permitted for {profile} use but would block distribution. If {repo} may ever ship to customers, contact the Open Source Office before relying on {package}@{version}.",
     "review": "{license} is not on the OSO approved or rejected lists. The Open Source Office needs to review this use of {package}@{version}.",
     "unknown": "No license could be determined for {package}@{version}. Declare the license or contact the Open Source Office.",
     "by_license": {
-      "AGPL": "AGPL obligations extend to users reached over a network, so it is banned for all Yahoo code regardless of how it is deployed. Remove {package}@{version}.",
+      "AGPL": "AGPL obligations extend to users reached over a network, so it is banned for all code regardless of how it is deployed. Remove {package}@{version}.",
       "GPL": "GPL is strong copyleft. It may not ship in distributed code. Contact the Open Source Office before using {package}@{version}.",
       "LGPL": "LGPL is weak copyleft: distributing it requires dynamic linking and relink rights. {package}@{version} may not ship in distributed code without Open Source Office approval of the linking model.",
       "Open Software": "The Open Software License has network-use obligations similar to AGPL. Not permitted. Remove {package}@{version}.",

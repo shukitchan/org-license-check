@@ -64,9 +64,9 @@ profiles; anything unlisted uses `default_profile` (**server-side**).
 | Profile | Applies to | Reject list used |
 |---------|-----------|------------------|
 | `distributed` | Shipped to customers | Reject Licenses Distributed Code |
-| `server-side` | Yahoo-operated backends (default) | Reject Licenses Server-Side Only |
+| `server-side` | Backends the organization operates (default) | Reject Licenses Server-Side Only |
 | `mobile` | App-store apps — distribution rules apply | Reject Licenses Distributed Code |
-| `internal` | Never leaves Yahoo | Banned list only |
+| `internal` | Never leaves the organization | Banned list only |
 | `ai-model` | OSS AI models — always flagged for OSO review | Reject Licenses Distributed Code |
 
 So GPL-2.0 is 🔴 red in a `distributed` repo, 🟡 yellow in a `server-side` one,
@@ -97,8 +97,8 @@ Everything an OSO admin needs to change lives in `policy/`. No code changes.
 The doc's matrix, transcribed verbatim: 46 approved licenses, 26 rejected
 server-side, 118 rejected for distributed code, plus the banned list.
 
-SBOMs report SPDX identifiers (`Apache-2.0`) while the matrix uses OSO/Mend
-display names (`Apache 2.0`), so the file also carries:
+SBOMs report SPDX identifiers (`Apache-2.0`) while the matrix uses the display
+names from OSO's current scanning tool (`Apache 2.0`), so the file also carries:
 
 - **`aliases`** – SPDX id → OSO name (`BSD-3-Clause` → `BSD 3`)
 - **`patterns`** – family fallbacks for unrecognised variants (`^LGPL` → `LGPL`)
@@ -143,7 +143,8 @@ a person confirms it really is incidental rather than the tool deciding.
 Packages from these purl types are skipped entirely. GitHub Actions are build
 tooling — they never ship in an artifact, so they create no distribution
 obligation, and GitHub's SBOM reports no license for them at all. Left in, they
-made 116 of 183 yellow repositories yellow for that reason alone.
+made roughly two thirds of yellow repositories yellow for that reason alone in
+a real organization scan.
 
 Exclusions are **counted, never hidden**: every report shows how many packages
 were skipped and which ecosystems were excluded. Packages with no purl (reports
@@ -200,12 +201,12 @@ a lowercased slug of the org name:
 
 ```
 output/                       state/
-├── yahoo-edge/               ├── yahoo-edge/
+├── example-org/              ├── example-org/
 │   ├── LICENSE_REPORT.md     │   ├── last-run.json
 │   ├── report.json           │   └── jira-index.json
-│   ├── findings.json         └── yahoo-o11y/
+│   ├── findings.json         └── other-org/
 │   └── jira-tickets.json         ├── last-run.json
-└── yahoo-o11y/                   └── jira-index.json
+└── other-org/                    └── jira-index.json
     └── ...
 ```
 
@@ -218,10 +219,10 @@ Two ways to run several:
 
 ```bash
 # One invocation; prints a combined summary table at the end
-./run-monthly.sh --org yahoo-edge --org yahoo-o11y --org yahoo-news
+./run-monthly.sh --org example-org --org other-org --org third-org
 
 # Or a loop, if you want per-org exit codes
-for org in yahoo-edge yahoo-o11y yahoo-news; do
+for org in example-org other-org third-org; do
   ./run-monthly.sh --org "$org" || echo "$org needs attention"
 done
 ```
@@ -233,7 +234,7 @@ incomplete), **2** if all scanned cleanly but some have findings at or above
 `--fail-on`, otherwise **0**.
 
 The slug is lowercased deliberately: GitHub org names are case-insensitive, so
-`--org yahoo-Edge` and `--org yahoo-edge` must not build two separate baselines
+`--org Example-Org` and `--org example-org` must not build two separate baselines
 for the same organization.
 
 ---
@@ -448,8 +449,8 @@ inside a fork or clone.
 
 That was built and then deliberately removed: every repository is now evaluated
 purely on its dependency licenses, with no fork or clone distinction. The rule
-had never fired in practice (none of the 507 repositories scanned in yahoo-Edge
-is a fork), and it added a tier, a `copyleft_families` list and a
+had never fired in practice — no repository in any organization scanned so far
+is a fork — and it added a tier, a `copyleft_families` list and a
 `cloned_repos` config block that all existed only to serve it.
 
 If OSO wants it back, it is recoverable from git history — see the commit that
@@ -461,9 +462,9 @@ removed it for the full mechanism.
 
 Two action items are owned by OSO rather than this repo:
 
-- **The authoritative license matrix.** The transcribed matrix is the Mend list
-  from the doc. If OSO publishes a revised matrix, it replaces
-  `policy/license-matrix.json`.
+- **The authoritative license matrix.** The transcribed matrix is the list from
+  the doc, as implemented in OSO's current scanning tool. If OSO publishes a
+  revised matrix, it replaces `policy/license-matrix.json`.
 - **Reporting requirements** (incremental / full / license level). Implemented
   as described above; the knobs are under `reporting` in `policy/policy.json`.
 

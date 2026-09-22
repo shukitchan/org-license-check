@@ -1,6 +1,6 @@
 {
-  "_source": "Open Source Office - License Scanning Requirements Document (License Matrix as implemented today in Mend)",
-  "_note": "Names below are the OSO/Mend display names from the requirements doc. 'aliases' maps normalized SPDX identifiers onto those names; 'patterns' are family fallbacks applied when no alias matches.",
+  "_source": "Open Source Office - License Scanning Requirements Document (license matrix as currently implemented in OSO's scanning tool)",
+  "_note": "Names below are the display names used by that tool, as listed in the requirements doc. 'aliases' maps normalized SPDX identifiers onto those names; 'patterns' are family fallbacks applied when no alias matches.",
 
   "approved": [
     "Academic 1.1", "Academic 1.2", "Academic 2.0", "Academic 2.1", "Academic 3.0",

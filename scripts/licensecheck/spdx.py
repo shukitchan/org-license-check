@@ -2,7 +2,7 @@
 
 SBOMs report SPDX identifiers ("Apache-2.0", "GPL-3.0-or-later") and sometimes
 SPDX expressions ("MIT OR Apache-2.0"). The requirements doc lists licenses under
-Mend display names ("Apache 2.0", "GPL 3.0"). This module bridges the two.
+their own display names ("Apache 2.0", "GPL 3.0"). This module bridges the two.
 """
 
 import re

@@ -337,7 +337,7 @@ def org_slug(org):
     """Directory name for one organization's reports and state.
 
     Lowercased on purpose: GitHub organization names are case-insensitive, so
-    without folding, `--org yahoo-Edge` and `--org yahoo-edge` would build two
+    without folding, `--org Example-Org` and `--org example-org` would build two
     separate incremental baselines for the same organization on a
     case-sensitive filesystem, and each month's diff would be wrong.
     """
