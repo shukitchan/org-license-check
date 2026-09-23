@@ -1,0 +1,9 @@
+# Generated reports
+output/
+
+# Run-to-run state (incremental diffing + Jira dedupe).
+# Committed by nothing; CI carries it between runs via actions/cache.
+state/
+
+__pycache__/
+*.pyc

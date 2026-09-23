@@ -1,0 +1,88 @@
+{
+  "_note": "Synthetic collector output used by tests and by `./run-monthly.sh --demo`. Mirrors the shape produced by license_check.py's collection step.",
+  "generated_at": "2026-09-01T00:00:00+00:00",
+  "repos": [
+    {
+      "full_name": "my-org/api-server",
+      "fork": false,
+      "archived": false,
+      "packages": [
+        { "name": "express", "version": "4.18.2", "licenseConcluded": "MIT", "licenseDeclared": "MIT" },
+        { "name": "lodash", "version": "4.17.21", "licenseConcluded": "MIT", "licenseDeclared": "MIT" },
+        { "name": "dotenv", "version": "16.3.1", "licenseConcluded": "BSD-3-Clause", "licenseDeclared": "BSD-3-Clause" },
+        { "name": "mongo-driver", "version": "6.1.0", "licenseConcluded": "Apache-2.0", "licenseDeclared": "Apache-2.0" }
+      ]
+    },
+    {
+      "full_name": "my-org/analytics-api",
+      "fork": false,
+      "archived": false,
+      "packages": [
+        { "name": "requests", "version": "2.31.0", "licenseConcluded": "Apache-2.0", "licenseDeclared": "Apache-2.0" },
+        { "name": "iuwsgi", "version": "2.0.21", "licenseConcluded": "GPL-2.0-only", "licenseDeclared": "GPL-2.0-only" },
+        { "name": "network-toolkit", "version": "1.4.0", "licenseConcluded": "AGPL-3.0-or-later", "licenseDeclared": "AGPL-3.0-or-later" }
+      ]
+    },
+    {
+      "full_name": "my-org/sdk-java",
+      "fork": false,
+      "archived": false,
+      "packages": [
+        { "name": "guava", "version": "32.1.3", "licenseConcluded": "Apache-2.0", "licenseDeclared": "Apache-2.0" },
+        { "name": "jaxb-runtime", "version": "4.0.4", "licenseConcluded": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0", "licenseDeclared": "NOASSERTION" },
+        { "name": "javax.mail", "version": "1.6.2", "licenseConcluded": "CDDL-1.1", "licenseDeclared": "CDDL-1.1" },
+        { "name": "jna", "version": "5.13.0", "licenseConcluded": "LGPL-2.1-or-later OR Apache-2.0", "licenseDeclared": "NOASSERTION" }
+      ]
+    },
+    {
+      "full_name": "my-org/android-app",
+      "fork": false,
+      "archived": false,
+      "packages": [
+        { "name": "okhttp", "version": "4.12.0", "licenseConcluded": "Apache-2.0", "licenseDeclared": "Apache-2.0" },
+        { "name": "chart-view", "version": "3.1.0", "licenseConcluded": "LGPL-3.0-only", "licenseDeclared": "LGPL-3.0-only" }
+      ]
+    },
+    {
+      "full_name": "my-org/internal-tools",
+      "fork": false,
+      "archived": false,
+      "packages": [
+        { "name": "pandas", "version": "2.1.4", "licenseConcluded": "BSD-3-Clause", "licenseDeclared": "BSD-3-Clause" },
+        { "name": "reporting-lib", "version": "0.9.0", "licenseConcluded": "GPL-3.0-only", "licenseDeclared": "GPL-3.0-only" },
+        { "name": "spider-crawl", "version": "1.2.0", "licenseConcluded": "AGPL-3.0-only", "licenseDeclared": "AGPL-3.0-only" }
+      ]
+    },
+    {
+      "full_name": "my-org/forked-cache",
+      "fork": false,
+      "archived": false,
+      "packages": [
+        { "name": "cache-core", "version": "2.0.0", "licenseConcluded": "MPL-2.0", "licenseDeclared": "MPL-2.0" },
+        { "name": "murmurhash", "version": "1.0.0", "licenseConcluded": "MIT", "licenseDeclared": "MIT" }
+      ]
+    },
+    {
+      "full_name": "my-org/data-pipeline",
+      "fork": false,
+      "archived": false,
+      "packages": [
+        { "name": "airflow", "version": "2.8.0", "licenseConcluded": "Apache-2.0", "licenseDeclared": "Apache-2.0" },
+        { "name": "legacy-etl", "version": "0.4.1", "licenseConcluded": "GPL-2.0-only", "licenseDeclared": "GPL-2.0-only" },
+        { "name": "mystery-lib", "version": "0.1.0", "licenseConcluded": "NOASSERTION", "licenseDeclared": "NOASSERTION" },
+        { "name": "vendor-sdk", "version": "3.3.0", "licenseConcluded": "LicenseRef-Vendor-Proprietary", "licenseDeclared": "LicenseRef-Vendor-Proprietary" }
+      ]
+    },
+    {
+      "full_name": "my-org/ml-models",
+      "fork": false,
+      "archived": false,
+      "packages": [
+        { "name": "torch", "version": "2.1.2", "licenseConcluded": "BSD-3-Clause", "licenseDeclared": "BSD-3-Clause" }
+      ]
+    }
+  ],
+  "skipped": [
+    { "repo": "my-org/legacy-app", "reason": "no dependency graph data" }
+  ]
+}
